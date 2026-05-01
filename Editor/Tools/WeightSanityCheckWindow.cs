@@ -14,6 +14,19 @@
 //      e.g. vertex on Left, bone is a custom bone whose pivot is on the
 //      avatar's right side → flagged with category "spatial".
 //
+// Center-band coverage: vertices in the centre stripe (between -centerMargin
+// and +centerMargin in Hips local X) are also scanned, but only flagged when
+// a single weight to a Left or Right bone exceeds a higher threshold
+// (_centerCrossSideFloor). This catches stray spine/crotch weights without
+// drowning the user in shoulder/clavicle bleed (which is normal).
+//
+// Vertex world-position transform: we use the renderer's `rootBone` (or the
+// renderer transform if rootBone is null) as the bind-pose anchor. Using
+// `renderer.transform` blindly is wrong on the very common rigs where the
+// renderer is parented to a separate GameObject (e.g. "Body") while the
+// rootBone points at Hips/Armature; that offset would silently flip side
+// classifications and hide most real issues.
+//
 // Preview / debug:
 //   - Per-issue *Preview* button: rotates the offending bone back and forth
 //     so the user can watch the deformation. Click again to stop.
@@ -49,12 +62,28 @@ namespace WhyKnot.AvatarQol.Tools {
         // upward if it's flagging too much.
         [SerializeField] private float _weightFloor   = 0.005f;
         [SerializeField] private float _centerMargin  = 0.02f;
+        // Vertices in the centre stripe (|x| < centerMargin in Hips local
+        // space) are scanned, but their threshold for "this side weight is
+        // suspicious" is higher to avoid flooding from normal shoulder/spine
+        // bleed. 0.05 = 5% of total influence; below that, central bleed is
+        // usually harmless.
+        [SerializeField] private float _centerCrossSideFloor = 0.05f;
         [SerializeField] private bool  _showGizmos    = true;
         [SerializeField] private bool  _verboseLog    = false;
+
+        // Vertex inspector: the user types a vertex index (or picks one from
+        // a dump) and the tool walks every weight on that vertex with full
+        // verdict reasoning, so it's possible to tell *exactly* why a weight
+        // wasn't flagged.
+        [SerializeField] private SkinnedMeshRenderer _inspectRenderer;
+        [SerializeField] private int _inspectVertexIndex = 0;
 
         [SerializeField] private List<SkinnedMeshRenderer> _excludedRenderers = new List<SkinnedMeshRenderer>();
 
         private readonly List<Issue> _issues = new List<Issue>();
+        // Tracked per scan so we can offer a "Enable Read/Write on these N
+        // meshes" button below the scan output.
+        private readonly List<SkinnedMeshRenderer> _nonReadableRenderers = new List<SkinnedMeshRenderer>();
         private string _scanSummary = "";
         private Vector2 _scroll;
 
@@ -208,13 +237,21 @@ namespace WhyKnot.AvatarQol.Tools {
                         _scanSummary == "" ? "Pick an Animator and click Scan." : "No issues found.",
                         EditorStyles.centeredGreyMiniLabel);
                 } else {
+                    // Pre-bucket counts once per draw rather than the previous
+                    // O(n²) Count() on every renderer header — meaningful at
+                    // multi-thousand-issue scales.
+                    var perRendererCount = new Dictionary<SkinnedMeshRenderer, int>();
+                    foreach (var i in _issues) {
+                        if (i.Renderer == null) continue;
+                        if (perRendererCount.ContainsKey(i.Renderer)) perRendererCount[i.Renderer]++;
+                        else perRendererCount[i.Renderer] = 1;
+                    }
                     SkinnedMeshRenderer lastRenderer = null;
-                    int rendererIssueCount = 0;
                     foreach (var i in _issues) {
                         if (i.Renderer != lastRenderer) {
-                            rendererIssueCount = _issues.Count(x => x.Renderer == i.Renderer);
+                            int count = i.Renderer != null && perRendererCount.TryGetValue(i.Renderer, out var n) ? n : 0;
                             EditorGUILayout.LabelField(
-                                $"{AvatarQol.GetGameObjectPath(i.Renderer.gameObject)}  —  {rendererIssueCount} issue(s)",
+                                $"{i.RendererPath}  —  {count} issue(s)" + (i.Renderer == null ? "  (renderer destroyed)" : ""),
                                 EditorStyles.boldLabel);
                             lastRenderer = i.Renderer;
                         }
@@ -229,21 +266,28 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 GUILayout.Space(8);
                 using (new EditorGUILayout.VerticalScope()) {
-                    string categoryTag = i.Category == IssueCategory.HumanoidCrossSide
-                        ? "[humanoid]"
-                        : "[spatial]";
+                    string categoryTag;
+                    switch (i.Category) {
+                        case IssueCategory.HumanoidCrossSide:    categoryTag = "[humanoid]"; break;
+                        case IssueCategory.SpatialCrossSide:     categoryTag = "[spatial]";  break;
+                        case IssueCategory.CenterBandSideBleed:  categoryTag = "[center]";   break;
+                        default:                                  categoryTag = "[?]";        break;
+                    }
+                    string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
                     EditorGUILayout.LabelField(
-                        $"{categoryTag} vertex #{i.VertexIndex}  on {i.VertexSide}  weighted to {i.OffendingBone.name} ({i.BoneSide})  weight={i.Weight:F3}",
+                        $"{categoryTag} vertex #{i.VertexIndex}  on {i.VertexSide}  weighted to {boneName} ({i.BoneSide})  weight={i.Weight:F3}",
                         EditorStyles.miniLabel);
                     EditorGUILayout.LabelField(
                         $"world pos: ({i.WorldPosition.x:F3}, {i.WorldPosition.y:F3}, {i.WorldPosition.z:F3})",
                         EditorStyles.miniLabel);
                 }
-                if (GUILayout.Button(new GUIContent("Ping", "Highlight the renderer in the hierarchy."),
-                        EditorStyles.miniButton, GUILayout.Width(40))) {
-                    if (i.Renderer != null) {
-                        Selection.activeObject = i.Renderer;
-                        EditorGUIUtility.PingObject(i.Renderer);
+                using (new EditorGUI.DisabledScope(i.Renderer == null)) {
+                    if (GUILayout.Button(new GUIContent("Ping", "Highlight the renderer in the hierarchy."),
+                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                        if (i.Renderer != null) {
+                            Selection.activeObject = i.Renderer;
+                            EditorGUIUtility.PingObject(i.Renderer);
+                        }
                     }
                 }
                 if (GUILayout.Button(new GUIContent("Frame", "Move the Scene view camera to the vertex."),
@@ -254,19 +298,33 @@ namespace WhyKnot.AvatarQol.Tools {
                         sv.Repaint();
                     }
                 }
-                bool isPreviewing = _previewBone == i.OffendingBone;
-                if (GUILayout.Button(
-                        new GUIContent(isPreviewing ? "Stop" : "Preview",
-                            "Wobble the offending bone in the Scene view so you can see how the bad weights deform the mesh. Click again to stop."),
-                        EditorStyles.miniButton, GUILayout.Width(60))) {
-                    if (isPreviewing) StopPreview();
-                    else StartPreview(i.OffendingBone);
+                using (new EditorGUI.DisabledScope(i.OffendingBone == null)) {
+                    bool isPreviewing = _previewBone == i.OffendingBone && i.OffendingBone != null;
+                    if (GUILayout.Button(
+                            new GUIContent(isPreviewing ? "Stop" : "Preview",
+                                "Wobble the offending bone in the Scene view so you can see how the bad weights deform the mesh. Click again to stop."),
+                            EditorStyles.miniButton, GUILayout.Width(60))) {
+                        if (isPreviewing) StopPreview();
+                        else if (i.OffendingBone != null) StartPreview(i.OffendingBone);
+                    }
+                }
+                using (new EditorGUI.DisabledScope(i.Renderer == null || i.OffendingBone == null)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Why?",
+                                "Send this vertex to the Inspect Vertex panel and run a per-weight verdict — useful for understanding why a related weight didn't flag."),
+                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                        _inspectRenderer = i.Renderer;
+                        _inspectVertexIndex = i.VertexIndex;
+                        InspectVertex();
+                    }
                 }
             }
             EditorGUILayout.Space(2);
         }
 
         private void DrawDebugBar() {
+            DrawNonReadableBanner();
+            DrawVertexInspector();
             using (new EditorGUILayout.HorizontalScope()) {
                 if (GUILayout.Button(
                         new GUIContent("Dump weights for selection",
@@ -275,6 +333,159 @@ namespace WhyKnot.AvatarQol.Tools {
                     DumpSelectedRendererWeights();
                 }
             }
+        }
+
+        private void DrawNonReadableBanner() {
+            if (_nonReadableRenderers.Count == 0) return;
+            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox)) {
+                EditorGUILayout.LabelField(
+                    $"{_nonReadableRenderers.Count} renderer(s) skipped — mesh has Read/Write disabled in importer.",
+                    EditorStyles.wordWrappedMiniLabel);
+                if (GUILayout.Button(
+                        new GUIContent($"Enable Read/Write & rescan",
+                            "For every skipped renderer, find its source asset, set Read/Write Enabled in the model importer, reimport, then re-run the scan."),
+                        GUILayout.Width(200), GUILayout.Height(34))) {
+                    EnableReadWriteOnSkippedAndRescan();
+                }
+            }
+        }
+
+        private void DrawVertexInspector() {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox)) {
+                EditorGUILayout.LabelField(
+                    new GUIContent("Inspect specific vertex",
+                        "When an issue you expect isn't flagged, drop the renderer here and type the vertex index. The console gets a per-weight verdict explaining exactly which gate every weight passed or failed against the current thresholds."),
+                    EditorStyles.boldLabel);
+                using (new EditorGUILayout.HorizontalScope()) {
+                    EditorGUILayout.LabelField("Renderer", GUILayout.Width(64));
+                    _inspectRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_inspectRenderer, typeof(SkinnedMeshRenderer), true);
+                }
+                using (new EditorGUILayout.HorizontalScope()) {
+                    EditorGUILayout.LabelField("Vertex #", GUILayout.Width(64));
+                    _inspectVertexIndex = EditorGUILayout.IntField(_inspectVertexIndex);
+                    using (new EditorGUI.DisabledScope(_inspectRenderer == null || _animator == null || !_animator.isHuman)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Inspect",
+                                    "Print the verdict for this vertex against current thresholds. Output goes to the Unity console."),
+                                GUILayout.Width(80))) {
+                            InspectVertex();
+                        }
+                    }
+                    if (GUILayout.Button(
+                            new GUIContent("From selection",
+                                "Set the renderer to whatever's currently selected in the hierarchy."),
+                            GUILayout.Width(110))) {
+                        var go = Selection.activeGameObject;
+                        if (go != null) _inspectRenderer = go.GetComponent<SkinnedMeshRenderer>();
+                    }
+                }
+            }
+        }
+
+        // For each unique mesh referenced by the skipped renderers, find its
+        // source asset's ModelImporter and flip Read/Write on. Reimport, then
+        // re-run the scan automatically. We only touch ModelImporter assets —
+        // procedurally-built or in-memory meshes (where there's no importer)
+        // can't be fixed this way and are skipped with a warning.
+        private void EnableReadWriteOnSkippedAndRescan() {
+            var importersToReimport = new HashSet<string>();
+            int unfixable = 0;
+            foreach (var r in _nonReadableRenderers) {
+                if (r == null || r.sharedMesh == null) continue;
+                var path = AssetDatabase.GetAssetPath(r.sharedMesh);
+                if (string.IsNullOrEmpty(path)) { unfixable++; continue; }
+                var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (importer == null) { unfixable++; continue; }
+                if (!importer.isReadable) {
+                    importer.isReadable = true;
+                    importer.SaveAndReimport();
+                }
+                importersToReimport.Add(path);
+            }
+            if (unfixable > 0) {
+                Debug.LogWarning(
+                    $"[Avatar QoL] {unfixable} skipped mesh(es) had no ModelImporter " +
+                    $"(procedurally generated, or imported by a different pipeline). " +
+                    $"Read/Write couldn't be auto-enabled on those.");
+            }
+            if (importersToReimport.Count > 0) {
+                Debug.Log($"[Avatar QoL] Enabled Read/Write on {importersToReimport.Count} model asset(s); rescanning.");
+            }
+            Scan();
+        }
+
+        // Walks every weight on a single vertex and prints the verdict each
+        // weight got against current thresholds. The most direct answer to
+        // "why didn't this get flagged?".
+        private void InspectVertex() {
+            var smr = _inspectRenderer;
+            if (smr == null) {
+                EditorUtility.DisplayDialog("Inspect vertex", "Drop a SkinnedMeshRenderer first.", "OK");
+                return;
+            }
+            if (_animator == null || !_animator.isHuman) {
+                EditorUtility.DisplayDialog("Inspect vertex",
+                    "Pick a Humanoid Animator at the top of the window first; we need it for side classification.", "OK");
+                return;
+            }
+            var mesh = smr.sharedMesh;
+            if (mesh == null || !mesh.isReadable) {
+                EditorUtility.DisplayDialog("Inspect vertex",
+                    "The renderer's mesh is null or not readable. Use 'Enable Read/Write & rescan' above if needed.", "OK");
+                return;
+            }
+            if (_inspectVertexIndex < 0 || _inspectVertexIndex >= mesh.vertexCount) {
+                EditorUtility.DisplayDialog("Inspect vertex",
+                    $"Vertex index {_inspectVertexIndex} is out of range (mesh has {mesh.vertexCount} vertices).", "OK");
+                return;
+            }
+
+            var sideMap = new HumanoidSideMap(_animator);
+            var bones = smr.bones;
+            var verts = mesh.vertices;
+            var weights = mesh.GetAllBoneWeights();
+            var bonesPerVertex = mesh.GetBonesPerVertex();
+            var bindAnchor = smr.rootBone != null ? smr.rootBone : smr.transform;
+
+            // Walk to the weight-cursor for the requested vertex.
+            int cursor = 0;
+            for (int v = 0; v < _inspectVertexIndex; v++) cursor += bonesPerVertex[v];
+            int wCount = bonesPerVertex[_inspectVertexIndex];
+            var worldPos = bindAnchor.TransformPoint(verts[_inspectVertexIndex]);
+            var vertexSide = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
+            bool isCenter = vertexSide == BoneSide.Center;
+            float floor = isCenter ? _centerCrossSideFloor : _weightFloor;
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[Avatar QoL] Inspect vertex #{_inspectVertexIndex} of {AvatarQol.GetGameObjectPath(smr.gameObject)}");
+            sb.AppendLine($"  world pos: ({worldPos.x:F4}, {worldPos.y:F4}, {worldPos.z:F4})  via rootBone={smr.rootBone?.name ?? "(null → using renderer.transform)"}");
+            sb.AppendLine($"  vertex side: {vertexSide} (isCenter={isCenter}, applicable floor={floor:F4})");
+            sb.AppendLine($"  weights ({wCount}):");
+            for (int w = 0; w < wCount; w++) {
+                var bw = weights[cursor + w];
+                Transform bone = bw.boneIndex >= 0 && bw.boneIndex < bones.Length ? bones[bw.boneIndex] : null;
+                string boneName = bone != null ? bone.name : $"(invalid index {bw.boneIndex})";
+                BoneSide humanoidSide = bone != null ? sideMap.GetSide(bone) : BoneSide.Unknown;
+                BoneSide spatialSide = bone != null ? sideMap.ClassifyWorldPosition(bone.position, _centerMargin) : BoneSide.Unknown;
+                BoneSide effectiveSide = humanoidSide != BoneSide.Unknown ? humanoidSide : spatialSide;
+                string verdict;
+                if (bone == null) {
+                    verdict = "SKIPPED (invalid bone index)";
+                } else if (bw.weight < floor) {
+                    verdict = $"SKIPPED (weight {bw.weight:F4} < floor {floor:F4})";
+                } else if (effectiveSide == BoneSide.Unknown) {
+                    verdict = "SKIPPED (bone has no Humanoid ancestor and pivot is in centre band — Unknown side)";
+                } else if (effectiveSide == BoneSide.Center) {
+                    verdict = "SKIPPED (bone classified Center — same as central avatar mass)";
+                } else if (!isCenter && effectiveSide == vertexSide) {
+                    verdict = "SKIPPED (bone same side as vertex)";
+                } else {
+                    string cat = isCenter ? "center-band" : (humanoidSide != BoneSide.Unknown ? "humanoid" : "spatial");
+                    verdict = $"FLAGGED [{cat}]  vertex={vertexSide} bone={effectiveSide}";
+                }
+                sb.AppendLine($"    {boneName}  weight={bw.weight:F4}  humanoid={humanoidSide}  spatial={spatialSide}  →  {verdict}");
+            }
+            Debug.Log(sb.ToString());
         }
 
         private static void DrawDivider() {
@@ -286,6 +497,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void Scan() {
             _issues.Clear();
+            _nonReadableRenderers.Clear();
             _scanSummary = "";
             if (_animator == null || !_animator.isHuman) return;
 
@@ -314,10 +526,9 @@ namespace WhyKnot.AvatarQol.Tools {
             }
 
             _issues.Sort((a, b) => {
-                int rcmp = string.Compare(
-                    AvatarQol.GetGameObjectPath(a.Renderer.gameObject),
-                    AvatarQol.GetGameObjectPath(b.Renderer.gameObject),
-                    System.StringComparison.Ordinal);
+                // RendererPath is cached at scan time, so this survives a
+                // renderer being destroyed mid-comparison.
+                int rcmp = string.Compare(a.RendererPath, b.RendererPath, System.StringComparison.Ordinal);
                 if (rcmp != 0) return rcmp;
                 return a.VertexIndex.CompareTo(b.VertexIndex);
             });
@@ -332,6 +543,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private int ScanRenderer(SkinnedMeshRenderer renderer, HumanoidSideMap sideMap, StringBuilder log) {
+            if (renderer == null || renderer.gameObject == null) return 0;
             var mesh = renderer.sharedMesh;
             if (mesh == null) return 0;
             var bones = renderer.bones;
@@ -340,7 +552,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 return 0;
             }
             if (!mesh.isReadable) {
-                log?.AppendLine($"  SKIP renderer (mesh not readable; enable Read/Write in importer): {AvatarQol.GetGameObjectPath(renderer.gameObject)}");
+                // Surface this in the SCAN summary too so the user notices when
+                // many renderers are silently being skipped. Actionable
+                // remediation lives in the "Enable Read/Write" UX next to the
+                // scan output.
+                log?.AppendLine($"  SKIP renderer (mesh not readable; enable Read/Write in the model importer): {AvatarQol.GetGameObjectPath(renderer.gameObject)}");
+                _nonReadableRenderers.Add(renderer);
                 return 0;
             }
 
@@ -358,7 +575,6 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (humanoidSide != BoneSide.Unknown) {
                     boneSides[i] = humanoidSide;
                 } else {
-                    // Fall back to spatial classification.
                     var spatial = sideMap.ClassifyWorldPosition(bones[i].position, _centerMargin);
                     boneSides[i] = spatial;
                     if (spatial == BoneSide.Left || spatial == BoneSide.Right) countSpatial++;
@@ -381,53 +597,83 @@ namespace WhyKnot.AvatarQol.Tools {
             var verts = mesh.vertices;
             var weights = mesh.GetAllBoneWeights();
             var bonesPerVertex = mesh.GetBonesPerVertex();
-            int weightCursor = 0;
-            var rendererTransform = renderer.transform;
+            // Defensive: corrupt / re-imported meshes can have mismatched
+            // sub-arrays. Bail rather than walk off the end.
+            if (verts.Length != mesh.vertexCount || bonesPerVertex.Length != mesh.vertexCount) {
+                log?.AppendLine($"    SKIP: vertex/bonesPerVertex length mismatch ({verts.Length}/{bonesPerVertex.Length} vs vertexCount={mesh.vertexCount}).");
+                return 0;
+            }
 
+            // CRITICAL: the bind-pose vertex space is anchored at the
+            // renderer's rootBone, not its own transform. Using the renderer
+            // transform on rigs where rootBone differs from it (very common —
+            // renderer parented to "Body" while rootBone points at the
+            // armature) silently flips left/right classifications and hides
+            // most real issues. Falling back to renderer.transform when
+            // rootBone is null preserves correctness for rigs that don't set
+            // it.
+            var bindPoseAnchor = renderer.rootBone != null ? renderer.rootBone : renderer.transform;
+
+            int weightCursor = 0;
             int sLeftVerts = 0, sRightVerts = 0, sCenterVerts = 0;
             int wSkippedFloor = 0, wSkippedCenter = 0, wSkippedUnknown = 0, wSkippedSameSide = 0;
-            int wFlaggedHumanoid = 0, wFlaggedSpatial = 0;
+            int wFlaggedHumanoid = 0, wFlaggedSpatial = 0, wFlaggedCenterBand = 0;
 
             for (int v = 0; v < mesh.vertexCount; v++) {
                 int wCount = bonesPerVertex[v];
-                var worldPos = rendererTransform.TransformPoint(verts[v]);
+                var worldPos = bindPoseAnchor.TransformPoint(verts[v]);
                 var vertexSide = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
-                if (vertexSide == BoneSide.Left)   sLeftVerts++;
-                else if (vertexSide == BoneSide.Right) sRightVerts++;
-                else sCenterVerts++;
+                if (vertexSide == BoneSide.Left)        sLeftVerts++;
+                else if (vertexSide == BoneSide.Right)  sRightVerts++;
+                else                                     sCenterVerts++;
 
-                if (vertexSide == BoneSide.Left || vertexSide == BoneSide.Right) {
-                    for (int w = 0; w < wCount; w++) {
-                        var bw = weights[weightCursor + w];
-                        if (bw.weight < _weightFloor) { wSkippedFloor++; continue; }
-                        var bSide = boneSides[bw.boneIndex];
-                        if (bSide == BoneSide.Unknown) { wSkippedUnknown++; continue; }
-                        if (bSide == BoneSide.Center)  { wSkippedCenter++;  continue; }
-                        if (bSide == vertexSide)        { wSkippedSameSide++; continue; }
-                        // Flagged. Distinguish humanoid-derived vs spatial-derived
-                        // bone classification so the user can weigh how confident
-                        // we should be in the call.
-                        var bone = bones[bw.boneIndex];
-                        bool spatialClassification = sideMap.GetSide(bone) == BoneSide.Unknown;
-                        var category = spatialClassification ? IssueCategory.SpatialCrossSide : IssueCategory.HumanoidCrossSide;
-                        if (spatialClassification) wFlaggedSpatial++; else wFlaggedHumanoid++;
-                        _issues.Add(new Issue {
-                            Renderer       = renderer,
-                            VertexIndex    = v,
-                            WorldPosition  = worldPos,
-                            VertexSide     = vertexSide,
-                            OffendingBone  = bone,
-                            BoneSide       = bSide,
-                            Weight         = bw.weight,
-                            Category       = category,
-                        });
+                bool isCenterVertex = vertexSide == BoneSide.Center;
+                float vertexFloor = isCenterVertex ? _centerCrossSideFloor : _weightFloor;
+
+                for (int w = 0; w < wCount; w++) {
+                    var bw = weights[weightCursor + w];
+                    if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
+                    if (bw.weight < vertexFloor) { wSkippedFloor++; continue; }
+                    var bSide = boneSides[bw.boneIndex];
+                    if (bSide == BoneSide.Unknown) { wSkippedUnknown++; continue; }
+                    if (bSide == BoneSide.Center)  { wSkippedCenter++;  continue; }
+                    // For Left/Right vertices: flag iff bone is the OPPOSITE side.
+                    // For Center vertices: flag iff bone is Left OR Right (any side
+                    // weight on a centerline vertex is suspicious if it survived
+                    // the higher floor).
+                    if (!isCenterVertex && bSide == vertexSide) { wSkippedSameSide++; continue; }
+
+                    var bone = bones[bw.boneIndex];
+                    if (bone == null) continue;
+                    bool spatialClassification = sideMap.GetSide(bone) == BoneSide.Unknown;
+                    IssueCategory category;
+                    if (isCenterVertex) {
+                        category = IssueCategory.CenterBandSideBleed;
+                        wFlaggedCenterBand++;
+                    } else if (spatialClassification) {
+                        category = IssueCategory.SpatialCrossSide;
+                        wFlaggedSpatial++;
+                    } else {
+                        category = IssueCategory.HumanoidCrossSide;
+                        wFlaggedHumanoid++;
                     }
+                    _issues.Add(new Issue {
+                        Renderer       = renderer,
+                        RendererPath   = AvatarQol.GetGameObjectPath(renderer.gameObject),
+                        VertexIndex    = v,
+                        WorldPosition  = worldPos,
+                        VertexSide     = vertexSide,
+                        OffendingBone  = bone,
+                        BoneSide       = bSide,
+                        Weight         = bw.weight,
+                        Category       = category,
+                    });
                 }
                 weightCursor += wCount;
             }
             log?.AppendLine($"    verts L={sLeftVerts} R={sRightVerts} C={sCenterVerts}");
             log?.AppendLine($"    weights skipped: floor={wSkippedFloor} center-bone={wSkippedCenter} unknown-bone={wSkippedUnknown} same-side={wSkippedSameSide}");
-            log?.AppendLine($"    weights flagged: humanoid={wFlaggedHumanoid} spatial={wFlaggedSpatial}");
+            log?.AppendLine($"    weights flagged: humanoid={wFlaggedHumanoid} spatial={wFlaggedSpatial} center-band={wFlaggedCenterBand}");
             return mesh.vertexCount;
         }
 
@@ -482,11 +728,14 @@ namespace WhyKnot.AvatarQol.Tools {
             int limit = Mathf.Min(mesh.vertexCount, 200);
             sb.AppendLine($"  first {limit} vertices:");
             int cursor = 0;
-            var rendererTransform = smr.transform;
+            // Same rootBone-anchor fix as Scan: using smr.transform here
+            // would silently flip side classifications on rigs whose
+            // renderer transform differs from the rootBone.
+            var bindAnchor = smr.rootBone != null ? smr.rootBone : smr.transform;
             for (int v = 0; v < mesh.vertexCount; v++) {
                 int wCount = bonesPerVertex[v];
                 if (v < limit) {
-                    var worldPos = rendererTransform.TransformPoint(verts[v]);
+                    var worldPos = bindAnchor.TransformPoint(verts[v]);
                     var side = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
                     sb.Append($"    v#{v} on {side} ({worldPos.x:F3},{worldPos.y:F3},{worldPos.z:F3}): ");
                     for (int w = 0; w < wCount; w++) {
@@ -518,14 +767,23 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void StopPreview() {
-            if (_previewBone == null) return;
+            // The Unity-fake-null check is the right read here: if the bone
+            // was destroyed, we can't restore it, but we should still clear
+            // our reference so we don't keep wobbling against a dead object
+            // every editor update.
+            if (_previewBone == null) { _previewBone = null; return; }
             _previewBone.localRotation = _previewRestRotation;
             _previewBone = null;
             SceneView.RepaintAll();
         }
 
         private void OnEditorUpdate() {
-            if (_previewBone == null) return;
+            if (_previewBone == null) {
+                // Bone may have been destroyed — drop our reference so the
+                // next OnGUI doesn't try to draw a Stop button against it.
+                _previewBone = null;
+                return;
+            }
             // Wobble around the bone's primary swing axes. Most rigs deform
             // legibly when rotated around their local X (forward bend) and
             // local Z (side splay). We combine the two so the mesh moves
@@ -555,12 +813,16 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ Records ----------------------------------------------------
 
         private enum IssueCategory {
-            HumanoidCrossSide,   // bone has Humanoid ancestor on opposite side
-            SpatialCrossSide,    // bone has no Humanoid ancestor; pivot on opposite side
+            HumanoidCrossSide,    // bone has Humanoid ancestor on opposite side
+            SpatialCrossSide,     // bone has no Humanoid ancestor; pivot on opposite side
+            CenterBandSideBleed,  // vertex is in the centre stripe; bone is Left or Right above the higher centre floor
         }
 
         private sealed class Issue {
             public SkinnedMeshRenderer Renderer;
+            // Cached at scan-time so OnGUI doesn't have to re-walk Transforms
+            // (and so a destroyed-after-scan renderer doesn't NRE the header).
+            public string RendererPath;
             public int VertexIndex;
             public Vector3 WorldPosition;
             public BoneSide VertexSide;
