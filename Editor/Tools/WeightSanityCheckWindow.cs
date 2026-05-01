@@ -159,8 +159,13 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawHeader() {
-            EditorGUILayout.LabelField("Avatar (Humanoid Animator)", EditorStyles.boldLabel);
-            var newAnim = (Animator)EditorGUILayout.ObjectField(_animator, typeof(Animator), true);
+            EditorGUILayout.LabelField(
+                new GUIContent("Avatar (Humanoid Animator)",
+                    "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
+                EditorStyles.boldLabel);
+            var newAnim = (Animator)EditorGUILayout.ObjectField(
+                new GUIContent(GUIContent.none.image, "Drop your avatar's Humanoid Animator here."),
+                _animator, typeof(Animator), true);
             if (newAnim != _animator) { _animator = newAnim; _issues.Clear(); _scanSummary = ""; }
             if (_animator != null && !_animator.isHuman) {
                 EditorGUILayout.HelpBox(
@@ -243,13 +248,16 @@ namespace WhyKnot.AvatarQol.Tools {
                     for (int i = 0; i < _excludedRenderers.Count; i++) {
                         using (new EditorGUILayout.HorizontalScope()) {
                             _excludedRenderers[i] = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
+                                new GUIContent(GUIContent.none.image, "A SkinnedMeshRenderer the scan should ignore (e.g. capes, dresses, tails that legitimately bridge left and right)."),
                                 _excludedRenderers[i], typeof(SkinnedMeshRenderer), true);
-                            if (GUILayout.Button("×", EditorStyles.miniButton, GUILayout.Width(22))) removeIndex = i;
+                            if (GUILayout.Button(new GUIContent("×", "Remove this renderer from the exclusion list."),
+                                    EditorStyles.miniButton, GUILayout.Width(22))) removeIndex = i;
                         }
                     }
                     if (removeIndex >= 0) _excludedRenderers.RemoveAt(removeIndex);
                 }
-                if (GUILayout.Button("Add row", EditorStyles.miniButton, GUILayout.Width(80))) {
+                if (GUILayout.Button(new GUIContent("Add row", "Append an empty slot for a new renderer to exclude. Drop a SkinnedMeshRenderer onto it after."),
+                        EditorStyles.miniButton, GUILayout.Width(80))) {
                     _excludedRenderers.Add(null);
                 }
             }
@@ -259,15 +267,30 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 bool canScan = _animator != null && _animator.isHuman;
                 using (new EditorGUI.DisabledScope(!canScan)) {
-                    if (GUILayout.Button("Scan", GUILayout.Height(24), GUILayout.MinWidth(120))) Scan();
+                    if (GUILayout.Button(
+                            new GUIContent("Scan",
+                                "Walk every SkinnedMeshRenderer under the Animator (or just the 'Limit scan to' renderer if set) and flag vertices weighted to a bone on the avatar's opposite side. Run again any time after a fix to refresh."),
+                            GUILayout.Height(24), GUILayout.MinWidth(120))) Scan();
                 }
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
-                    if (GUILayout.Button("Clear results", GUILayout.Height(24), GUILayout.Width(110))) {
+                    if (GUILayout.Button(
+                            new GUIContent($"Fix all visible ({_issues.Count})",
+                                "Apply fixes to every issue currently in the list. Each weight is redirected to its Humanoid mirror when one exists, otherwise zeroed and the remaining weights on that vertex are scaled up. FBX-imported meshes are cloned to editable .mesh files first; the original FBX is never modified."),
+                            GUILayout.Height(24), GUILayout.Width(150))) {
+                        FixIssues(new List<Issue>(_issues), $"{_issues.Count} issue(s)");
+                    }
+                    if (GUILayout.Button(
+                            new GUIContent("Clear results",
+                                "Drop the current issue list and clear the gizmo overlay. Doesn't undo any fixes you've already applied."),
+                            GUILayout.Height(24), GUILayout.Width(110))) {
                         _issues.Clear(); _scanSummary = ""; SceneView.RepaintAll();
                     }
                 }
                 using (new EditorGUI.DisabledScope(_previewBone == null)) {
-                    if (GUILayout.Button("Stop preview", GUILayout.Height(24), GUILayout.Width(110))) {
+                    if (GUILayout.Button(
+                            new GUIContent("Stop preview",
+                                "Restore the currently-previewed bone to its rest rotation and stop the wobble animation."),
+                            GUILayout.Height(24), GUILayout.Width(110))) {
                         StopPreview();
                     }
                 }
@@ -366,6 +389,13 @@ namespace WhyKnot.AvatarQol.Tools {
                         _inspectVertexIndex = i.VertexIndex;
                         InspectVertex();
                     }
+                    if (GUILayout.Button(
+                            new GUIContent("Fix",
+                                "Redirect this offending weight to the bone's Humanoid mirror (e.g. RightUpperLeg → LeftUpperLeg). When no mirror is available, zero the weight and renormalise the rest. FBX-imported meshes are cloned to an editable .mesh in Assets/AvatarQol Generated/ before any change."),
+                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                        var name = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
+                        FixIssues(new List<Issue> { i }, $"weight on {name}");
+                    }
                 }
             }
             EditorGUILayout.Space(2);
@@ -406,11 +436,19 @@ namespace WhyKnot.AvatarQol.Tools {
                         "When an issue you expect isn't flagged, drop the renderer here and type the vertex index. The console gets a per-weight verdict explaining exactly which gate every weight passed or failed against the current thresholds."),
                     EditorStyles.boldLabel);
                 using (new EditorGUILayout.HorizontalScope()) {
-                    EditorGUILayout.LabelField("Renderer", GUILayout.Width(64));
-                    _inspectRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_inspectRenderer, typeof(SkinnedMeshRenderer), true);
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Renderer",
+                            "The SkinnedMeshRenderer whose vertex you want to inspect. Auto-fills when you change 'Limit scan to' or click 'From selection' below."),
+                        GUILayout.Width(64));
+                    _inspectRenderer = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(
+                        new GUIContent(GUIContent.none.image, "Drop the SkinnedMeshRenderer to inspect."),
+                        _inspectRenderer, typeof(SkinnedMeshRenderer), true);
                 }
                 using (new EditorGUILayout.HorizontalScope()) {
-                    EditorGUILayout.LabelField("Vertex #", GUILayout.Width(64));
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Vertex #",
+                            "The mesh vertex index to inspect. Find candidate indices via 'Dump weights for selection' below, or click 'Why?' on any flagged issue to auto-fill this field with that issue's vertex."),
+                        GUILayout.Width(64));
                     _inspectVertexIndex = EditorGUILayout.IntField(_inspectVertexIndex);
                     using (new EditorGUI.DisabledScope(_inspectRenderer == null || _animator == null || !_animator.isHuman)) {
                         if (GUILayout.Button(
@@ -922,6 +960,57 @@ namespace WhyKnot.AvatarQol.Tools {
             float zAngle = Mathf.Cos(t * Mathf.PI) * 18f;
             _previewBone.localRotation = _previewRestRotation * Quaternion.Euler(angle, 0f, zAngle);
             SceneView.RepaintAll();
+        }
+
+        // ------ Fix --------------------------------------------------------
+
+        private void FixIssues(List<Issue> issues, string description) {
+            if (issues == null || issues.Count == 0) return;
+            // Single confirmation up-front; the apply runs in a single Undo
+            // group so Ctrl+Z reverts everything in one step.
+            var rendererCount = new HashSet<SkinnedMeshRenderer>();
+            foreach (var i in issues) if (i.Renderer != null) rendererCount.Add(i.Renderer);
+            string msg = $"Fix {description} across {rendererCount.Count} renderer(s)?\n\n" +
+                         "Each offending weight will be redirected to its Humanoid mirror bone " +
+                         "(e.g. RightUpperLeg → LeftUpperLeg). Weights with no mirror are zeroed " +
+                         "and the remaining weights on the same vertex are scaled up.\n\n" +
+                         "FBX-imported meshes will be cloned to editable .mesh assets in " +
+                         $"{WeightFixer.GeneratedFolder}/ — the original FBX is never modified.\n\n" +
+                         "Ctrl+Z reverts the operation.";
+            if (!EditorUtility.DisplayDialog("Fix weight contamination", msg, "Fix", "Cancel")) return;
+
+            // Translate UI Issue → fixer IssueRef (avoids leaking UI types
+            // into the fixer module).
+            var refs = new List<WeightFixer.IssueRef>(issues.Count);
+            foreach (var i in issues) {
+                refs.Add(new WeightFixer.IssueRef {
+                    Renderer       = i.Renderer,
+                    VertexIndex    = i.VertexIndex,
+                    OffendingBone  = i.OffendingBone,
+                    Weight         = i.Weight,
+                });
+            }
+            var result = WeightFixer.ApplyFixes(refs, _animator);
+
+            // Drop the just-fixed issues from the visible list and refresh
+            // the gizmo overlay. We don't auto-rescan: the user usually
+            // wants to compare before/after themselves, and Ctrl+Z is more
+            // useful when the issue list still shows what was done.
+            var fixedSet = new HashSet<Issue>(issues);
+            _issues.RemoveAll(fixedSet.Contains);
+            SceneView.RepaintAll();
+
+            string clonedNote = result.MeshesCloned > 0
+                ? $" Cloned {result.MeshesCloned} mesh(es) to {WeightFixer.GeneratedFolder}/."
+                : "";
+            string skipNote = result.Skipped > 0
+                ? $" Skipped {result.Skipped} (weight no longer present)."
+                : "";
+            Debug.Log(
+                $"[Avatar QoL] Weight fix: {result.Fixed} weight(s) corrected — " +
+                $"{result.Mirrored} mirrored, {result.Zeroed} zeroed + renormalised, " +
+                $"across {result.RenderersTouched} renderer(s).{clonedNote}{skipNote}");
+            AssetDatabase.SaveAssets();
         }
 
         // ------ Scene view gizmos -----------------------------------------
