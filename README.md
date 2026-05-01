@@ -9,7 +9,8 @@ The framework is small on purpose. Everything is built on Unity's public APIs (A
 
 ## What's in the box
 
-- **Weight Sanity Check.** Detects the most common Blender-weight-transfer mistake on humanoid avatars: vertices on one side of the avatar (a left-leg garter, say) picking up non-trivial weight from a bone on the other side (right thigh). When you spread the legs the bad vertices stretch or follow the wrong limb. The tool walks every SkinnedMeshRenderer under a Humanoid Animator, classifies each vertex's bind-pose position as Left / Right / Center using the avatar's actual bone geometry (so it doesn't depend on Unity coordinate convention), classifies each weighted bone by walking up to its nearest Humanoid ancestor, and flags every cross-side mismatch above a tunable weight floor. Per-issue Ping + Frame buttons + an optional Scene-view gizmo overlay. *(Tools → Avatar QoL → Weight Sanity Check…, or right-click an avatar in the hierarchy → Avatar QoL → Check weights…)*
+- **Weight Sanity Check.** Detects the most common Blender-weight-transfer mistake on humanoid avatars: vertices on one side of the avatar (a left-leg garter, say) picking up non-trivial weight from a bone on the other side (right thigh). When you spread the legs the bad vertices stretch or follow the wrong limb. The tool walks every SkinnedMeshRenderer under a Humanoid Animator, classifies each vertex's bind-pose position as Left / Right / Center using the avatar's actual bone geometry (so it doesn't depend on Unity coordinate convention), classifies each weighted bone by walking up to its nearest Humanoid ancestor *or* — for custom rig bones with no Humanoid parent — by their pivot's spatial position. Per-issue Ping + Frame buttons, a *Preview* button that wobbles the offending bone in the Scene view so you can see exactly how the mesh deforms, an optional Scene-view gizmo overlay, a *Verbose log* mode that dumps per-renderer scan stats to the console (so it's possible to tell *why* a weight wasn't flagged), and a *Dump weights for selection* debug button for surgical inspection. *(Tools → Avatar QoL → Weight Sanity Check…, or right-click an avatar in the hierarchy → Avatar QoL → Check weights…)*
+- **PhysBone Preset (early).** A library of smart presets that set up VRChat PhysBones on a selection of bones. Built-in presets: Tail, Ears, Hair, Dress/Skirt, plus a Generic fallback. Each preset reads a structural analysis of the selection (chain count, bone count per chain, average bone size, dominant orientation in avatar local space, nearest Humanoid ancestor) and adapts its parameters — gravity scales with verticality, spring loosens on longer chains, hair adds a head sphere collider sized to the avatar, dresses auto-add capsule colliders along the legs. Auto-suggests the best-fit preset on selection; preview-then-apply UI shows exactly what will be created before any mutation. *(Tools → Avatar QoL → Apply PhysBone Preset…, or right-click bones in the hierarchy → Avatar QoL → Apply PhysBone preset…)*
 
 More tools to come — see the [wiki](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki) for the long-form docs and roadmap.
 
@@ -26,6 +27,18 @@ Assets/
       Tools/
         WeightSanityCheckTool.cs
         WeightSanityCheckWindow.cs
+        PhysBonePreset/
+          IPhysBonePreset.cs
+          BoneSelectionAnalysis.cs
+          PhysBonePlanApplier.cs
+          PhysBonePresetTool.cs
+          PhysBonePresetWindow.cs
+          Presets/
+            GenericPreset.cs
+            EarsPreset.cs
+            TailPreset.cs
+            HairPreset.cs
+            DressPreset.cs
 ```
 
 No asmdef, no dependencies. Tested on Unity **2022.3**.
