@@ -20,12 +20,19 @@
 // (_centerCrossSideFloor). This catches stray spine/crotch weights without
 // drowning the user in shoulder/clavicle bleed (which is normal).
 //
-// Vertex world-position transform: we use the renderer's `rootBone` (or the
-// renderer transform if rootBone is null) as the bind-pose anchor. Using
-// `renderer.transform` blindly is wrong on the very common rigs where the
-// renderer is parented to a separate GameObject (e.g. "Body") while the
-// rootBone points at Hips/Armature; that offset would silently flip side
-// classifications and hide most real issues.
+// Vertex world-position derivation: we use proper bind-pose math —
+//   bonesPerVertex[v]'s highest-weight bone is the "anchor"; multiply the
+//   mesh-local vertex by `mesh.bindposes[boneIdx]` to get bone-local
+//   coords, then `bone.TransformPoint(...)` to get world. This is rig-
+//   independent and doesn't rely on the renderer's GameObject sitting at
+//   any particular place. (An earlier version used renderer.transform or
+//   rootBone directly; both produced wrong classifications on real-world
+//   rigs where the mesh-local frame doesn't align with where the
+//   GameObject sits — symptom: every vertex got bucketed as Center.)
+// Caveat: the bone's CURRENT world transform is used, so if the avatar is
+// being driven by an animator the result is the deformed position rather
+// than the bind-pose position. Pause animator / scrub to T-pose before
+// scanning when in doubt.
 //
 // Preview / debug:
 //   - Per-issue *Preview* button: rotates the offending bone back and forth
@@ -57,17 +64,25 @@ namespace WhyKnot.AvatarQol.Tools {
 
         // Persisted across domain reloads.
         [SerializeField] private Animator _animator;
+        // Optional: when set, Scan walks only this renderer instead of every
+        // SkinnedMeshRenderer under the avatar. Lets the user focus on a
+        // specific outfit / mesh while debugging without touching the
+        // exclusion list.
+        [SerializeField] private SkinnedMeshRenderer _limitToRenderer;
         // Lower default than the original 0.01: real bleed in the 0.001-0.005
         // range still causes visible stretching during animation. Tunable
         // upward if it's flagging too much.
         [SerializeField] private float _weightFloor   = 0.005f;
         [SerializeField] private float _centerMargin  = 0.02f;
         // Vertices in the centre stripe (|x| < centerMargin in Hips local
-        // space) are scanned, but their threshold for "this side weight is
-        // suspicious" is higher to avoid flooding from normal shoulder/spine
-        // bleed. 0.05 = 5% of total influence; below that, central bleed is
-        // usually harmless.
-        [SerializeField] private float _centerCrossSideFloor = 0.05f;
+        // space) are scanned only when _scanCenterBand is on. Even then
+        // their threshold for "this side weight is suspicious" is higher
+        // than the regular floor: centre-band cross-side bleed is mostly
+        // legitimate (spine vertices with a tiny shoulder weight, etc.).
+        // 0.10 = 10% of total influence — a clear majority weight on one
+        // side from what should be a centre-anchored vertex.
+        [SerializeField] private bool  _scanCenterBand = false;
+        [SerializeField] private float _centerCrossSideFloor = 0.10f;
         [SerializeField] private bool  _showGizmos    = true;
         [SerializeField] private bool  _verboseLog    = false;
 
@@ -152,6 +167,27 @@ namespace WhyKnot.AvatarQol.Tools {
                     "Animator is not Humanoid. The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hips).",
                     MessageType.Warning);
             }
+            using (new EditorGUILayout.HorizontalScope()) {
+                EditorGUILayout.LabelField(
+                    new GUIContent("Limit scan to",
+                        "Optional. When set, Scan only walks this single SkinnedMeshRenderer instead of every renderer under the avatar. Useful when debugging one outfit / mesh without touching the exclusion list."),
+                    GUILayout.Width(100));
+                var newLimit = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_limitToRenderer, typeof(SkinnedMeshRenderer), true);
+                if (newLimit != _limitToRenderer) {
+                    _limitToRenderer = newLimit;
+                    // Save the user a click: when they pick a renderer to
+                    // limit the scan to, also seed the Inspect Vertex
+                    // renderer with the same value so "Why?" / Inspect
+                    // queries default to the same focused renderer.
+                    if (newLimit != null && _inspectRenderer == null) _inspectRenderer = newLimit;
+                }
+            }
+            if (_animator != null && _limitToRenderer != null
+                    && !_limitToRenderer.transform.IsChildOf(_animator.transform)) {
+                EditorGUILayout.HelpBox(
+                    "The 'Limit scan to' renderer is not a descendant of the picked Animator. The scan will still run on it, but side classification uses the Animator's Hips so it may misbehave for renderers parented elsewhere.",
+                    MessageType.Warning);
+            }
         }
 
         private void DrawTunables() {
@@ -178,6 +214,19 @@ namespace WhyKnot.AvatarQol.Tools {
                     new GUIContent("Verbose log",
                         "On scan, dump per-renderer stats and per-skipped-weight reasons to the Unity console. Useful for understanding why a weight you expected to be flagged isn't."),
                     _verboseLog);
+            }
+            using (new EditorGUILayout.HorizontalScope()) {
+                _scanCenterBand = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Scan centre-band vertices",
+                        "When on, vertices in the centre stripe (between -centerMargin and +centerMargin in Hips local space) are also scanned for cross-side weights. Off by default — centre-band bleed (spine ↔ clavicle, hip ↔ pelvis) is usually legitimate and floods the issue list. Turn on if you suspect spine-area weight contamination."),
+                    _scanCenterBand, GUILayout.Width(220));
+                if (_scanCenterBand) {
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Centre threshold",
+                            "Minimum weight a centre-stripe vertex must have to a Left or Right bone before it's flagged. Higher than the regular floor because small bleed near the spine is usually fine."),
+                        GUILayout.Width(120));
+                    _centerCrossSideFloor = EditorGUILayout.Slider(_centerCrossSideFloor, 0f, 0.5f);
+                }
             }
         }
 
@@ -445,20 +494,42 @@ namespace WhyKnot.AvatarQol.Tools {
             var verts = mesh.vertices;
             var weights = mesh.GetAllBoneWeights();
             var bonesPerVertex = mesh.GetBonesPerVertex();
-            var bindAnchor = smr.rootBone != null ? smr.rootBone : smr.transform;
+            var bindposes = mesh.bindposes;
 
             // Walk to the weight-cursor for the requested vertex.
             int cursor = 0;
             for (int v = 0; v < _inspectVertexIndex; v++) cursor += bonesPerVertex[v];
             int wCount = bonesPerVertex[_inspectVertexIndex];
-            var worldPos = bindAnchor.TransformPoint(verts[_inspectVertexIndex]);
+
+            // Same bindpose-based world position as Scan: highest-weight
+            // bone is the anchor. Falling back to renderer.transform is only
+            // hit when the vertex has no usable weights (rare).
+            int primaryIdx = -1;
+            float primaryWeight = 0f;
+            for (int w = 0; w < wCount; w++) {
+                var bw = weights[cursor + w];
+                if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
+                if (bones[bw.boneIndex] == null) continue;
+                if (bw.weight > primaryWeight) { primaryWeight = bw.weight; primaryIdx = bw.boneIndex; }
+            }
+            Vector3 worldPos;
+            string anchorDesc;
+            if (primaryIdx >= 0 && bindposes != null && primaryIdx < bindposes.Length) {
+                var meshLocal = verts[_inspectVertexIndex];
+                var boneLocal = bindposes[primaryIdx].MultiplyPoint3x4(meshLocal);
+                worldPos = bones[primaryIdx].TransformPoint(boneLocal);
+                anchorDesc = $"bindpose anchor={bones[primaryIdx].name} (weight {primaryWeight:F3})";
+            } else {
+                worldPos = smr.transform.TransformPoint(verts[_inspectVertexIndex]);
+                anchorDesc = "fallback=renderer.transform (no usable bone weight)";
+            }
             var vertexSide = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
             bool isCenter = vertexSide == BoneSide.Center;
             float floor = isCenter ? _centerCrossSideFloor : _weightFloor;
 
             var sb = new StringBuilder();
             sb.AppendLine($"[Avatar QoL] Inspect vertex #{_inspectVertexIndex} of {AvatarQol.GetGameObjectPath(smr.gameObject)}");
-            sb.AppendLine($"  world pos: ({worldPos.x:F4}, {worldPos.y:F4}, {worldPos.z:F4})  via rootBone={smr.rootBone?.name ?? "(null → using renderer.transform)"}");
+            sb.AppendLine($"  world pos: ({worldPos.x:F4}, {worldPos.y:F4}, {worldPos.z:F4})  {anchorDesc}");
             sb.AppendLine($"  vertex side: {vertexSide} (isCenter={isCenter}, applicable floor={floor:F4})");
             sb.AppendLine($"  weights ({wCount}):");
             for (int w = 0; w < wCount; w++) {
@@ -507,13 +578,24 @@ namespace WhyKnot.AvatarQol.Tools {
                 return;
             }
 
-            var renderers = _animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            // If the user dropped a renderer into "Limit scan to", honour that
+            // and skip everything else under the avatar. Otherwise walk every
+            // SkinnedMeshRenderer in the hierarchy.
+            SkinnedMeshRenderer[] renderers;
+            if (_limitToRenderer != null) {
+                renderers = new[] { _limitToRenderer };
+            } else {
+                renderers = _animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            }
             int verticesScanned = 0;
             int renderersScanned = 0;
             var globalLog = _verboseLog ? new StringBuilder() : null;
             globalLog?.AppendLine($"[Avatar QoL] Weight Sanity Check verbose log");
-            globalLog?.AppendLine($"  weightFloor={_weightFloor:F4}, centerMargin={_centerMargin:F3}");
+            globalLog?.AppendLine($"  weightFloor={_weightFloor:F4}, centerMargin={_centerMargin:F3}, scanCenterBand={_scanCenterBand}, centerCrossSideFloor={_centerCrossSideFloor:F3}");
             globalLog?.AppendLine($"  avatar={_animator.gameObject.name}, leftSign={sideMap.LeftSignInHipsLocal}");
+            if (_limitToRenderer != null) {
+                globalLog?.AppendLine($"  filter: limit-to-renderer={AvatarQol.GetGameObjectPath(_limitToRenderer.gameObject)}");
+            }
 
             foreach (var r in renderers) {
                 if (r == null || r.sharedMesh == null) continue;
@@ -597,22 +679,21 @@ namespace WhyKnot.AvatarQol.Tools {
             var verts = mesh.vertices;
             var weights = mesh.GetAllBoneWeights();
             var bonesPerVertex = mesh.GetBonesPerVertex();
+            // bindposes[i] transforms a mesh-local point into bone-i-local
+            // coordinates AT BIND POSE. We use this plus bone.TransformPoint
+            // (current pose, assumed ≈ bind pose) to derive each vertex's
+            // world position correctly regardless of where the renderer's
+            // GameObject sits in the hierarchy.
+            var bindposes = mesh.bindposes;
             // Defensive: corrupt / re-imported meshes can have mismatched
             // sub-arrays. Bail rather than walk off the end.
             if (verts.Length != mesh.vertexCount || bonesPerVertex.Length != mesh.vertexCount) {
                 log?.AppendLine($"    SKIP: vertex/bonesPerVertex length mismatch ({verts.Length}/{bonesPerVertex.Length} vs vertexCount={mesh.vertexCount}).");
                 return 0;
             }
-
-            // CRITICAL: the bind-pose vertex space is anchored at the
-            // renderer's rootBone, not its own transform. Using the renderer
-            // transform on rigs where rootBone differs from it (very common —
-            // renderer parented to "Body" while rootBone points at the
-            // armature) silently flips left/right classifications and hides
-            // most real issues. Falling back to renderer.transform when
-            // rootBone is null preserves correctness for rigs that don't set
-            // it.
-            var bindPoseAnchor = renderer.rootBone != null ? renderer.rootBone : renderer.transform;
+            if (bindposes == null || bindposes.Length < bones.Length) {
+                log?.AppendLine($"    WARN: bindposes incomplete ({bindposes?.Length ?? 0} for {bones.Length} bones); falling back to renderer.transform for affected vertices.");
+            }
 
             int weightCursor = 0;
             int sLeftVerts = 0, sRightVerts = 0, sCenterVerts = 0;
@@ -621,13 +702,46 @@ namespace WhyKnot.AvatarQol.Tools {
 
             for (int v = 0; v < mesh.vertexCount; v++) {
                 int wCount = bonesPerVertex[v];
-                var worldPos = bindPoseAnchor.TransformPoint(verts[v]);
+
+                // Bind-pose world position via the highest-weight bone.
+                // The vertex's "anchor" bone is whichever bone influences it
+                // most; we transform mesh-local → bone-local (bindpose) →
+                // world (current bone transform). Equivalent to evaluating
+                // the skin at bind pose for a single dominant bone, which
+                // is plenty for side classification.
+                int primaryIdx = -1;
+                float primaryWeight = 0f;
+                for (int w = 0; w < wCount; w++) {
+                    var bw = weights[weightCursor + w];
+                    if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
+                    if (bones[bw.boneIndex] == null) continue;
+                    if (bw.weight > primaryWeight) {
+                        primaryWeight = bw.weight;
+                        primaryIdx = bw.boneIndex;
+                    }
+                }
+                Vector3 worldPos;
+                if (primaryIdx >= 0 && bindposes != null && primaryIdx < bindposes.Length) {
+                    var meshLocal = verts[v];
+                    var boneLocal = bindposes[primaryIdx].MultiplyPoint3x4(meshLocal);
+                    worldPos = bones[primaryIdx].TransformPoint(boneLocal);
+                } else {
+                    worldPos = renderer.transform.TransformPoint(verts[v]);
+                }
+
                 var vertexSide = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
                 if (vertexSide == BoneSide.Left)        sLeftVerts++;
                 else if (vertexSide == BoneSide.Right)  sRightVerts++;
                 else                                     sCenterVerts++;
 
                 bool isCenterVertex = vertexSide == BoneSide.Center;
+                // Skip centre-band vertices entirely unless the user opted
+                // in. They produce noise (legitimate spine/clavicle bleed)
+                // that drowns the real Left/Right cross-side issues.
+                if (isCenterVertex && !_scanCenterBand) {
+                    weightCursor += wCount;
+                    continue;
+                }
                 float vertexFloor = isCenterVertex ? _centerCrossSideFloor : _weightFloor;
 
                 for (int w = 0; w < wCount; w++) {
@@ -728,14 +842,28 @@ namespace WhyKnot.AvatarQol.Tools {
             int limit = Mathf.Min(mesh.vertexCount, 200);
             sb.AppendLine($"  first {limit} vertices:");
             int cursor = 0;
-            // Same rootBone-anchor fix as Scan: using smr.transform here
-            // would silently flip side classifications on rigs whose
-            // renderer transform differs from the rootBone.
-            var bindAnchor = smr.rootBone != null ? smr.rootBone : smr.transform;
+            // Same bindpose-based world position as Scan: pick the highest-
+            // weight bone, transform mesh-local → bone-local via bindpose,
+            // bone-local → world via the bone's current transform.
+            var bindposes = mesh.bindposes;
             for (int v = 0; v < mesh.vertexCount; v++) {
                 int wCount = bonesPerVertex[v];
                 if (v < limit) {
-                    var worldPos = bindAnchor.TransformPoint(verts[v]);
+                    int primaryIdx = -1;
+                    float primaryWeight = 0f;
+                    for (int w = 0; w < wCount; w++) {
+                        var bw = weights[cursor + w];
+                        if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
+                        if (bones[bw.boneIndex] == null) continue;
+                        if (bw.weight > primaryWeight) { primaryWeight = bw.weight; primaryIdx = bw.boneIndex; }
+                    }
+                    Vector3 worldPos;
+                    if (primaryIdx >= 0 && bindposes != null && primaryIdx < bindposes.Length) {
+                        var boneLocal = bindposes[primaryIdx].MultiplyPoint3x4(verts[v]);
+                        worldPos = bones[primaryIdx].TransformPoint(boneLocal);
+                    } else {
+                        worldPos = smr.transform.TransformPoint(verts[v]);
+                    }
                     var side = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
                     sb.Append($"    v#{v} on {side} ({worldPos.x:F3},{worldPos.y:F3},{worldPos.z:F3}): ");
                     for (int w = 0; w < wCount; w++) {
