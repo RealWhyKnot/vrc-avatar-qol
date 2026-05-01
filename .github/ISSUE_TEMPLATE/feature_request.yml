@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a tool or check that would catch an avatar problem you've hit.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest something. Skim the [wiki](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki) first to check whether the behaviour already exists or has been considered.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the avatar workflow you're stuck on, or the kind of issue you keep hitting that a check could surface.
+      placeholder: e.g. "Every time I retarget weights from a base mesh, I miss N-gons in the new mesh until VRChat shows them as broken."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A clear description of what you want to happen. If you can sketch the UI ("right-click ___ to get ___"), do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, Blender-side approaches, etc.
+
+  - type: textarea
+    id: extra-context
+    attributes:
+      label: Additional context
+      description: Screenshots, links to similar features in other tools, references — anything that helps.

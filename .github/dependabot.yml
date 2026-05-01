@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # GitHub Actions runners — keep workflow action versions current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

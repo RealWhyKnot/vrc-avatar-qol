@@ -1,0 +1,13 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# CI workflow files are parsed by GitHub Actions runners (Linux); pin LF.
+.github/workflows/*.yml text eol=lf
+
+# Wiki source mirrors to a Linux-side wiki repo via wiki-sync.yml; LF avoids
+# diff churn there.
+wiki/*.md text eol=lf
+
+# C# source: explicit CRLF so contributors editing on Windows don't trip
+# autocrlf warnings on every checkout.
+*.cs text eol=crlf

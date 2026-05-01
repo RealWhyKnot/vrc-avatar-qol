@@ -1,0 +1,33 @@
+name: CI
+
+# Light CI for a Unity-package-source repo. We don't run Unity itself here
+# (heavy, requires a license, slow) — that can be added later if it pays off.
+# What we DO check: workflow YAML is valid (actionlint).
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'wiki/**'
+      - '*.md'
+      - 'LICENSE'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'wiki/**'
+      - '*.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint (workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2

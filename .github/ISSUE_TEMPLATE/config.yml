@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Wiki — Troubleshooting
+    url: https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Troubleshooting
+    about: Common failure modes are documented here. Check before filing.
+  - name: Wiki — Tools Overview
+    url: https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview
+    about: How each tool is supposed to work. Make sure your usage matches before reporting a bug.

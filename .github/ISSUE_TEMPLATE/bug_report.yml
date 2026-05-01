@@ -1,0 +1,75 @@
+name: Bug report
+description: Something is broken or a tool flagged something that's actually fine.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, skim the [Troubleshooting wiki page](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Troubleshooting) — common failure modes and false-positive scenarios are documented there.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the issue. What did you do, what did you expect, what happened instead?
+      placeholder: |
+        Steps to reproduce:
+        1. ...
+        2. ...
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which tool is affected?
+      multiple: true
+      options:
+        - Weight Sanity Check
+        - Framework / shared utilities
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: unity-version
+    attributes:
+      label: Unity version
+      placeholder: e.g. 2022.3.22f1
+    validations:
+      required: true
+
+  - type: input
+    id: vrc-avatar-qol-version
+    attributes:
+      label: vrc-avatar-qol commit / version
+      description: Latest commit SHA you have in `Editor/`, or the release tag.
+      placeholder: e.g. main @ <sha>
+    validations:
+      required: true
+
+  - type: textarea
+    id: avatar-shape
+    attributes:
+      label: Avatar shape
+      description: |
+        Brief notes on the avatar so we can reproduce. Humanoid? Number of skinned mesh renderers? Roughly how many vertices? Any unusual rig setups (extra bones under Humanoid bones, prop chains, etc.)?
+      placeholder: e.g. Humanoid, ~80k tris, 6 skinned renderers, custom skirt rig under LeftUpperLeg.
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Unity console output
+      description: Copy any errors/exceptions from the Unity console.
+      render: text
+
+  - type: textarea
+    id: extra-context
+    attributes:
+      label: Anything else?
+      description: Screenshots, scene/prefab snippets, hardware notes — anything that helps reproduce.

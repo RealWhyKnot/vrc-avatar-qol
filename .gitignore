@@ -1,0 +1,42 @@
+# vrc-avatar-qol ships only its source files and is consumed by Unity projects
+# that already manage their own Library/, Temp/, etc. We don't ship .meta
+# files because tools live as raw .cs sources alongside whatever .meta the
+# consuming project generates.
+
+# Unity-generated noise (in case someone clones this directly into Assets/)
+Library/
+Temp/
+Logs/
+Obj/
+Build/
+Builds/
+[Aa]ssetStoreTools/
+*.csproj
+*.sln
+*.unityproj
+*.user
+*.suo
+*.tmp
+*.userprefs
+sysinfo.txt
+*.pidb
+*.booproj
+*.svd
+*.apk
+*.ipa
+*.unitypackage
+
+# .meta files — see header
+*.meta
+
+# IDE / OS
+.vs/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local Claude Code state (per-clone, not shared)
+.claude/
