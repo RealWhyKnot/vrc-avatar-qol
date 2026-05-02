@@ -95,6 +95,18 @@ namespace WhyKnot.AvatarQol.Tools {
 
         [SerializeField] private List<SkinnedMeshRenderer> _excludedRenderers = new List<SkinnedMeshRenderer>();
 
+        // UI state — persisted across reloads so a power user who opened
+        // Advanced once doesn't have to re-open it every session.
+        [SerializeField] private bool _advancedOpen;
+        [SerializeField] private bool _showConsoleNoticeAfterInspect;
+        [SerializeField] private bool _showConsoleNoticeAfterDump;
+        // Per-renderer collapsed state in the issue list, keyed by RendererPath.
+        [SerializeField] private List<string> _collapsedRenderers = new List<string>();
+        // Per-issue expansion in the compact issue rows.
+        private readonly HashSet<int> _expandedIssueRows = new HashSet<int>();
+
+        private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#weight-sanity-check";
+
         private readonly List<Issue> _issues = new List<Issue>();
         // Tracked per scan so we can offer a "Enable Read/Write on these N
         // meshes" button below the scan output.
@@ -145,102 +157,145 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
+            // Top-of-window banner only when applicable; otherwise it lives
+            // inside Advanced. Hoisting it here keeps the user from missing
+            // a half-skipped scan.
+            if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
+            DrawTitleBar();
             DrawHeader();
             EditorGUILayout.Space(2);
-            DrawTunables();
-            EditorGUILayout.Space(2);
-            DrawExclusions();
-            EditorGUILayout.Space(4);
             DrawScanBar();
-            DrawDivider();
+            EditorGUILayout.Space(2);
             DrawIssues();
-            DrawDivider();
-            DrawDebugBar();
+            EditorGUILayout.Space(4);
+            DrawAdvanced();
+        }
+
+        private void DrawTitleBar() {
+            using (new EditorGUILayout.HorizontalScope()) {
+                EditorGUILayout.LabelField(
+                    new GUIContent("Weight Sanity Check",
+                        "Walk every SkinnedMeshRenderer under a Humanoid Animator and flag vertices weighted to a bone on the avatar's opposite side."),
+                    AvatarQolStyles.SectionTitle);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(
+                        new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
+                        EditorStyles.miniButton, GUILayout.Width(22), GUILayout.Height(18))) {
+                    Application.OpenURL(WikiUrl);
+                }
+            }
         }
 
         private void DrawHeader() {
-            EditorGUILayout.LabelField(
-                new GUIContent("Avatar (Humanoid Animator)",
-                    "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
-                EditorStyles.boldLabel);
-            var newAnim = (Animator)EditorGUILayout.ObjectField(
-                new GUIContent(GUIContent.none.image, "Drop your avatar's Humanoid Animator here."),
-                _animator, typeof(Animator), true);
-            if (newAnim != _animator) { _animator = newAnim; _issues.Clear(); _scanSummary = ""; }
-            if (_animator != null && !_animator.isHuman) {
-                EditorGUILayout.HelpBox(
-                    "Animator is not Humanoid. The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hips).",
-                    MessageType.Warning);
-            }
-            using (new EditorGUILayout.HorizontalScope()) {
-                EditorGUILayout.LabelField(
-                    new GUIContent("Limit scan to",
-                        "Optional. When set, Scan only walks this single SkinnedMeshRenderer instead of every renderer under the avatar. Useful when debugging one outfit / mesh without touching the exclusion list."),
-                    GUILayout.Width(100));
-                var newLimit = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_limitToRenderer, typeof(SkinnedMeshRenderer), true);
-                if (newLimit != _limitToRenderer) {
-                    _limitToRenderer = newLimit;
-                    // Save the user a click: when they pick a renderer to
-                    // limit the scan to, also seed the Inspect Vertex
-                    // renderer with the same value so "Why?" / Inspect
-                    // queries default to the same focused renderer.
-                    if (newLimit != null && _inspectRenderer == null) _inspectRenderer = newLimit;
+            using (AvatarQolStyles.Section("Avatar")) {
+                AvatarQolStyles.LabeledField(
+                    new GUIContent("Animator",
+                        "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
+                    () => {
+                        var newAnim = (Animator)EditorGUILayout.ObjectField(_animator, typeof(Animator), true);
+                        if (newAnim != _animator) { _animator = newAnim; _issues.Clear(); _scanSummary = ""; }
+                    });
+                if (_animator != null && !_animator.isHuman) {
+                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                        "Animator is not Humanoid. The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hips).");
                 }
-            }
-            if (_animator != null && _limitToRenderer != null
-                    && !_limitToRenderer.transform.IsChildOf(_animator.transform)) {
-                EditorGUILayout.HelpBox(
-                    "The 'Limit scan to' renderer is not a descendant of the picked Animator. The scan will still run on it, but side classification uses the Animator's Hips so it may misbehave for renderers parented elsewhere.",
-                    MessageType.Warning);
+                AvatarQolStyles.LabeledField(
+                    new GUIContent("Limit scan to",
+                        "Optional. When set, Scan only walks this single SkinnedMeshRenderer instead of every renderer under the avatar. Useful when debugging one outfit / mesh without touching the exclusion list. Auto-fills the Inspect Vertex renderer below."),
+                    () => {
+                        var newLimit = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_limitToRenderer, typeof(SkinnedMeshRenderer), true);
+                        if (newLimit != _limitToRenderer) {
+                            _limitToRenderer = newLimit;
+                            if (newLimit != null && _inspectRenderer == null) _inspectRenderer = newLimit;
+                        }
+                    });
+                if (_animator != null && _limitToRenderer != null
+                        && !_limitToRenderer.transform.IsChildOf(_animator.transform)) {
+                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                        "The 'Limit scan to' renderer is not a descendant of the picked Animator. The scan will still run on it, but side classification uses the Animator's Hips so it may misbehave for renderers parented elsewhere.");
+                }
             }
         }
 
+        private void DrawAdvanced() {
+            _advancedOpen = EditorGUILayout.Foldout(_advancedOpen,
+                new GUIContent("Advanced",
+                    "Detection thresholds, exclusion list, diagnostics (verbose log, gizmos), and the per-vertex inspector. Folded by default — most users only need Animator + Scan + Fix all."),
+                true, AvatarQolStyles.FoldoutHeader);
+            if (!_advancedOpen) return;
+            DrawTunables();
+            EditorGUILayout.Space(2);
+            DrawExclusions();
+            EditorGUILayout.Space(2);
+            DrawDiagnostics();
+        }
+
         private void DrawTunables() {
-            using (new EditorGUILayout.HorizontalScope()) {
-                EditorGUILayout.LabelField(
+            using (AvatarQolStyles.Section("Detection thresholds",
+                    "Knobs that control how aggressive the scanner is. Sensible defaults; tune only when the issue list is too noisy or too quiet.")) {
+                AvatarQolStyles.LabeledField(
                     new GUIContent("Weight floor",
-                        "Per-vertex weights below this are treated as noise and ignored. 0.005 = 0.5% influence."),
-                    GUILayout.Width(100));
-                _weightFloor = EditorGUILayout.Slider(_weightFloor, 0f, 0.5f);
-            }
-            using (new EditorGUILayout.HorizontalScope()) {
-                EditorGUILayout.LabelField(
+                        "Weights below this are ignored as noise. Range 0–0.5; 0.005 ≈ 0.5% influence per vertex. Raise toward 0.02 if you see false positives; lower toward 0.001 if real bleed (≤ 0.005) is being missed."),
+                    () => _weightFloor = EditorGUILayout.Slider(_weightFloor, 0f, 0.5f));
+                AvatarQolStyles.LabeledField(
                     new GUIContent("Center margin",
-                        "Vertices closer to the avatar's centerline than this aren't classified as left or right. Avoids spurious flags on the spine."),
-                    GUILayout.Width(100));
-                _centerMargin = EditorGUILayout.Slider(_centerMargin, 0f, 0.2f);
-            }
-            using (new EditorGUILayout.HorizontalScope()) {
-                _showGizmos = EditorGUILayout.ToggleLeft(
-                    new GUIContent("Show gizmos in Scene view",
-                        "Draw a red marker in the Scene view at every flagged vertex's bind-pose world position."),
-                    _showGizmos, GUILayout.Width(220));
-                _verboseLog = EditorGUILayout.ToggleLeft(
-                    new GUIContent("Verbose log",
-                        "On scan, dump per-renderer stats and per-skipped-weight reasons to the Unity console. Useful for understanding why a weight you expected to be flagged isn't."),
-                    _verboseLog);
-            }
-            using (new EditorGUILayout.HorizontalScope()) {
-                _scanCenterBand = EditorGUILayout.ToggleLeft(
-                    new GUIContent("Scan centre-band vertices",
-                        "When on, vertices in the centre stripe (between -centerMargin and +centerMargin in Hips local space) are also scanned for cross-side weights. Off by default — centre-band bleed (spine ↔ clavicle, hip ↔ pelvis) is usually legitimate and floods the issue list. Turn on if you suspect spine-area weight contamination."),
-                    _scanCenterBand, GUILayout.Width(220));
+                        "Half-width of the centre stripe in metres, in Hips local X. Vertices within ±this distance of the spine count as Center, not Left/Right. 0–0.2 m. 0.02 m ≈ 2 cm. Increase if shoulder/clavicle vertices keep getting flagged; decrease if real cross-side bleed near the spine is being missed."),
+                    () => _centerMargin = EditorGUILayout.Slider(_centerMargin, 0f, 0.2f));
+                using (new EditorGUILayout.HorizontalScope()) {
+                    _scanCenterBand = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Scan centre-band vertices",
+                            "When on, vertices in the centre stripe are also scanned for cross-side weights. Off by default — centre-band bleed (spine ↔ clavicle, hip ↔ pelvis) is usually legitimate and floods the issue list."),
+                        _scanCenterBand, GUILayout.Width(220));
+                }
                 if (_scanCenterBand) {
-                    EditorGUILayout.LabelField(
+                    AvatarQolStyles.LabeledField(
                         new GUIContent("Centre threshold",
                             "Minimum weight a centre-stripe vertex must have to a Left or Right bone before it's flagged. Higher than the regular floor because small bleed near the spine is usually fine."),
-                        GUILayout.Width(120));
-                    _centerCrossSideFloor = EditorGUILayout.Slider(_centerCrossSideFloor, 0f, 0.5f);
+                        () => _centerCrossSideFloor = EditorGUILayout.Slider(_centerCrossSideFloor, 0f, 0.5f));
+                }
+            }
+        }
+
+        private void DrawDiagnostics() {
+            using (AvatarQolStyles.Section("Diagnostics",
+                    "Visualisation, logging, and the per-vertex Inspect tool. Helpful when the scan isn't flagging something you expected, or when triaging hundreds of issues.")) {
+                using (new EditorGUILayout.HorizontalScope()) {
+                    _showGizmos = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Show gizmos in Scene view",
+                            "Draw a red marker at every flagged vertex's bind-pose world position. Helps you see where issues cluster on the avatar."),
+                        _showGizmos, GUILayout.Width(220));
+                    _verboseLog = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Verbose log",
+                            "On scan, dump per-renderer stats and per-skipped-weight reasons to the Unity console. Useful for understanding why a weight you expected isn't being flagged."),
+                        _verboseLog);
+                }
+                EditorGUILayout.Space(4);
+                DrawVertexInspector();
+                if (_showConsoleNoticeAfterInspect) {
+                    if (AvatarQolStyles.ConsoleResultNotice("Inspect output")) {
+                        EditorApplication.ExecuteMenuItem("Window/General/Console");
+                        _showConsoleNoticeAfterInspect = false;
+                    }
+                }
+                EditorGUILayout.Space(2);
+                if (GUILayout.Button(
+                        new GUIContent("Dump weights for selection",
+                            "Print every vertex's bone weights for the currently selected SkinnedMeshRenderer to the Unity console. Useful when an issue you expect isn't being flagged."),
+                        GUILayout.Height(22))) {
+                    DumpSelectedRendererWeights();
+                }
+                if (_showConsoleNoticeAfterDump) {
+                    if (AvatarQolStyles.ConsoleResultNotice("Weight dump")) {
+                        EditorApplication.ExecuteMenuItem("Window/General/Console");
+                        _showConsoleNoticeAfterDump = false;
+                    }
                 }
             }
         }
 
         private void DrawExclusions() {
-            EditorGUILayout.LabelField(
-                new GUIContent("Exclude renderers (legit cross-side)",
-                    "Add any SkinnedMeshRenderer that bridges left/right by design (capes, dresses, tails). They won't be scanned."),
-                EditorStyles.boldLabel);
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinHeight(40))) {
+            using (AvatarQolStyles.Section("Exclude renderers (legit cross-side)",
+                    "Add any SkinnedMeshRenderer that bridges left/right by design (capes, dresses, tails). They won't be scanned.")) {
                 if (_excludedRenderers.Count == 0) {
                     EditorGUILayout.LabelField("(none)", EditorStyles.centeredGreyMiniLabel);
                 } else {
@@ -267,41 +322,65 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 bool canScan = _animator != null && _animator.isHuman;
                 using (new EditorGUI.DisabledScope(!canScan)) {
-                    if (GUILayout.Button(
+                    if (AvatarQolStyles.PrimaryButtonInline(
                             new GUIContent("Scan",
                                 "Walk every SkinnedMeshRenderer under the Animator (or just the 'Limit scan to' renderer if set) and flag vertices weighted to a bone on the avatar's opposite side. Run again any time after a fix to refresh."),
-                            GUILayout.Height(24), GUILayout.MinWidth(120))) Scan();
-                }
-                using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
-                    if (GUILayout.Button(
-                            new GUIContent($"Fix all visible ({_issues.Count})",
-                                "Apply fixes to every issue currently in the list. Each weight is redirected to its Humanoid mirror when one exists, otherwise zeroed and the remaining weights on that vertex are scaled up. FBX-imported meshes are cloned to editable .mesh files first; the original FBX is never modified."),
-                            GUILayout.Height(24), GUILayout.Width(150))) {
-                        FixIssues(new List<Issue>(_issues), $"{_issues.Count} issue(s)");
-                    }
-                    if (GUILayout.Button(
-                            new GUIContent("Clear results",
-                                "Drop the current issue list and clear the gizmo overlay. Doesn't undo any fixes you've already applied."),
-                            GUILayout.Height(24), GUILayout.Width(110))) {
-                        _issues.Clear(); _scanSummary = ""; SceneView.RepaintAll();
-                    }
+                            GUILayout.MinWidth(140))) Scan();
                 }
                 using (new EditorGUI.DisabledScope(_previewBone == null)) {
                     if (GUILayout.Button(
                             new GUIContent("Stop preview",
                                 "Restore the currently-previewed bone to its rest rotation and stop the wobble animation."),
-                            GUILayout.Height(24), GUILayout.Width(110))) {
+                            GUILayout.Height(28), GUILayout.Width(110))) {
                         StopPreview();
                     }
                 }
                 GUILayout.FlexibleSpace();
                 if (!string.IsNullOrEmpty(_scanSummary)) {
-                    EditorGUILayout.LabelField(_scanSummary, EditorStyles.miniLabel);
+                    EditorGUILayout.LabelField(_scanSummary, AvatarQolStyles.Muted);
                 }
             }
         }
 
         private void DrawIssues() {
+            // Header bar: "Issues (N)" + Fix all + Clear, attached to the
+            // list so the action sits next to what it acts on.
+            using (new EditorGUILayout.HorizontalScope()) {
+                EditorGUILayout.LabelField(
+                    new GUIContent(_issues.Count > 0 ? $"Issues ({_issues.Count})" : "Issues",
+                        "Each row is one offending bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
+                    AvatarQolStyles.SubsectionTitle);
+                GUILayout.FlexibleSpace();
+                using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
+                    if (AvatarQolStyles.PrimaryButtonInline(
+                            new GUIContent($"Fix all ({_issues.Count})",
+                                "Apply fixes to every issue currently in the list. Each weight is redirected to its Humanoid mirror when one exists, otherwise zeroed and the remaining weights on that vertex are scaled up. FBX-imported meshes are cloned to editable .mesh files first; the original FBX is never modified."),
+                            GUILayout.Width(150))) {
+                        FixIssues(new List<Issue>(_issues), $"{_issues.Count} issue(s)");
+                    }
+                    if (GUILayout.Button(
+                            new GUIContent("Clear",
+                                "Drop the current issue list and clear the gizmo overlay. Doesn't undo any fixes you've already applied."),
+                            GUILayout.Height(28), GUILayout.Width(70))) {
+                        _issues.Clear(); _scanSummary = ""; _expandedIssueRows.Clear(); SceneView.RepaintAll();
+                    }
+                }
+            }
+
+            // Inline legend so the bracket tags aren't mystery jargon.
+            if (_issues.Count > 0) {
+                using (new EditorGUILayout.HorizontalScope()) {
+                    EditorGUILayout.LabelField("Legend:", AvatarQolStyles.Muted, GUILayout.Width(54));
+                    AvatarQolStyles.BadgePill("humanoid", AvatarQolStyles.CategoryHumanoid,
+                        "Bone has a Humanoid ancestor on the avatar's opposite side from the vertex. Highest-confidence flag.");
+                    AvatarQolStyles.BadgePill("spatial", AvatarQolStyles.CategorySpatial,
+                        "Bone has no Humanoid ancestor; its world pivot sits on the opposite side of the vertex.");
+                    AvatarQolStyles.BadgePill("center", AvatarQolStyles.CategoryCenter,
+                        "Vertex is in the centre stripe; a Left or Right bone exceeded the higher centre threshold.");
+                    GUILayout.FlexibleSpace();
+                }
+            }
+
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
                 _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 if (_issues.Count == 0) {
@@ -309,123 +388,158 @@ namespace WhyKnot.AvatarQol.Tools {
                         _scanSummary == "" ? "Pick an Animator and click Scan." : "No issues found.",
                         EditorStyles.centeredGreyMiniLabel);
                 } else {
-                    // Pre-bucket counts once per draw rather than the previous
-                    // O(n²) Count() on every renderer header — meaningful at
-                    // multi-thousand-issue scales.
+                    // Pre-bucket counts once per draw — was O(n²) before.
                     var perRendererCount = new Dictionary<SkinnedMeshRenderer, int>();
                     foreach (var i in _issues) {
                         if (i.Renderer == null) continue;
-                        if (perRendererCount.ContainsKey(i.Renderer)) perRendererCount[i.Renderer]++;
-                        else perRendererCount[i.Renderer] = 1;
+                        perRendererCount.TryGetValue(i.Renderer, out var n);
+                        perRendererCount[i.Renderer] = n + 1;
                     }
                     SkinnedMeshRenderer lastRenderer = null;
+                    bool currentCollapsed = false;
+                    int issueIndex = 0;
                     foreach (var i in _issues) {
+                        int captured = issueIndex++;
                         if (i.Renderer != lastRenderer) {
                             int count = i.Renderer != null && perRendererCount.TryGetValue(i.Renderer, out var n) ? n : 0;
-                            EditorGUILayout.LabelField(
-                                $"{i.RendererPath}  —  {count} issue(s)" + (i.Renderer == null ? "  (renderer destroyed)" : ""),
-                                EditorStyles.boldLabel);
+                            currentCollapsed = _collapsedRenderers.Contains(i.RendererPath);
+                            using (new EditorGUILayout.HorizontalScope()) {
+                                bool now = EditorGUILayout.Foldout(!currentCollapsed,
+                                    new GUIContent($"{i.RendererPath}  —  {count} issue(s)" + (i.Renderer == null ? "  (renderer destroyed)" : ""),
+                                        "Click to collapse all issues from this renderer. Useful when one mesh has hundreds of issues you've already triaged."),
+                                    true, AvatarQolStyles.FoldoutHeader);
+                                bool nowCollapsed = !now;
+                                if (nowCollapsed != currentCollapsed) {
+                                    if (nowCollapsed) _collapsedRenderers.Add(i.RendererPath);
+                                    else _collapsedRenderers.Remove(i.RendererPath);
+                                    currentCollapsed = nowCollapsed;
+                                }
+                                GUILayout.FlexibleSpace();
+                            }
                             lastRenderer = i.Renderer;
                         }
-                        DrawIssueRow(i);
+                        if (!currentCollapsed) DrawIssueRowCompact(i, captured);
                     }
                 }
                 EditorGUILayout.EndScrollView();
             }
         }
 
-        private void DrawIssueRow(Issue i) {
+        private void DrawIssueRowCompact(Issue i, int issueIndex) {
+            string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
+            Color tag; string tagText; string tagTooltip;
+            switch (i.Category) {
+                case IssueCategory.HumanoidCrossSide:
+                    tag = AvatarQolStyles.CategoryHumanoid; tagText = "humanoid";
+                    tagTooltip = "Bone has a Humanoid ancestor on the avatar's opposite side from the vertex. Highest-confidence flag.";
+                    break;
+                case IssueCategory.SpatialCrossSide:
+                    tag = AvatarQolStyles.CategorySpatial; tagText = "spatial";
+                    tagTooltip = "Bone has no Humanoid ancestor; its world pivot sits on the opposite side of the vertex.";
+                    break;
+                case IssueCategory.CenterBandSideBleed:
+                    tag = AvatarQolStyles.CategoryCenter; tagText = "center";
+                    tagTooltip = "Vertex is in the centre stripe; a Left or Right bone exceeded the higher centre threshold.";
+                    break;
+                default:
+                    tag = AvatarQolStyles.ColorInfo; tagText = "?"; tagTooltip = ""; break;
+            }
+            bool expanded = _expandedIssueRows.Contains(issueIndex);
+
             using (new EditorGUILayout.HorizontalScope()) {
-                GUILayout.Space(8);
-                using (new EditorGUILayout.VerticalScope()) {
-                    string categoryTag;
-                    switch (i.Category) {
-                        case IssueCategory.HumanoidCrossSide:    categoryTag = "[humanoid]"; break;
-                        case IssueCategory.SpatialCrossSide:     categoryTag = "[spatial]";  break;
-                        case IssueCategory.CenterBandSideBleed:  categoryTag = "[center]";   break;
-                        default:                                  categoryTag = "[?]";        break;
-                    }
-                    string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
-                    EditorGUILayout.LabelField(
-                        $"{categoryTag} vertex #{i.VertexIndex}  on {i.VertexSide}  weighted to {boneName} ({i.BoneSide})  weight={i.Weight:F3}",
-                        EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField(
-                        $"world pos: ({i.WorldPosition.x:F3}, {i.WorldPosition.y:F3}, {i.WorldPosition.z:F3})",
-                        EditorStyles.miniLabel);
+                GUILayout.Space(6);
+                // Foldout caret on the far left toggles the per-row details.
+                bool now = EditorGUILayout.Foldout(expanded, GUIContent.none, true);
+                if (now != expanded) {
+                    if (now) _expandedIssueRows.Add(issueIndex);
+                    else _expandedIssueRows.Remove(issueIndex);
                 }
+                AvatarQolStyles.BadgePill(tagText, tag, tagTooltip);
+                EditorGUILayout.LabelField(
+                    new GUIContent($"v#{i.VertexIndex}  {i.VertexSide} → {boneName} ({i.BoneSide})  w={i.Weight:F3}",
+                        $"Vertex #{i.VertexIndex} on the avatar's {i.VertexSide} side has weight {i.Weight:F3} on {boneName}, which is classified {i.BoneSide}. Click ∨ for the world position; use the row buttons to investigate or fix."),
+                    AvatarQolStyles.Mono);
+                GUILayout.FlexibleSpace();
+
                 using (new EditorGUI.DisabledScope(i.Renderer == null)) {
-                    if (GUILayout.Button(new GUIContent("Ping", "Highlight the renderer in the hierarchy."),
-                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                    if (GUILayout.Button(new GUIContent("P", "Ping the renderer in the hierarchy."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
                         if (i.Renderer != null) {
                             Selection.activeObject = i.Renderer;
                             EditorGUIUtility.PingObject(i.Renderer);
                         }
                     }
                 }
-                if (GUILayout.Button(new GUIContent("Frame", "Move the Scene view camera to the vertex."),
-                        EditorStyles.miniButton, GUILayout.Width(50))) {
+                if (GUILayout.Button(new GUIContent("F", "Frame: move Scene camera to the vertex."),
+                        AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
                     var sv = SceneView.lastActiveSceneView;
                     if (sv != null) {
-                        sv.LookAt(i.WorldPosition, sv.rotation, 0.3f);
+                        sv.LookAt(i.WorldPosition, sv.rotation, 0.15f);
                         sv.Repaint();
                     }
                 }
                 using (new EditorGUI.DisabledScope(i.OffendingBone == null)) {
+                    if (GUILayout.Button(new GUIContent("R",
+                            "Reveal: select the offending bone, frame the vertex, and flash a marker disc in the Scene view for two seconds."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                        Selection.activeObject = i.OffendingBone;
+                        EditorGUIUtility.PingObject(i.OffendingBone);
+                        var sv = SceneView.lastActiveSceneView;
+                        if (sv != null) { sv.LookAt(i.WorldPosition, sv.rotation, 0.15f); sv.Repaint(); }
+                        FlashHighlight(i.WorldPosition);
+                    }
                     bool isPreviewing = _previewBone == i.OffendingBone && i.OffendingBone != null;
-                    if (GUILayout.Button(
-                            new GUIContent(isPreviewing ? "Stop" : "Preview",
-                                "Wobble the offending bone in the Scene view so you can see how the bad weights deform the mesh. Click again to stop."),
-                            EditorStyles.miniButton, GUILayout.Width(60))) {
+                    if (GUILayout.Button(new GUIContent(isPreviewing ? "■" : "▶",
+                            "Preview: wobble the offending bone in the Scene view so you can see how the bad weights deform the mesh. Click again to stop."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
                         if (isPreviewing) StopPreview();
                         else if (i.OffendingBone != null) StartPreview(i.OffendingBone);
                     }
                 }
                 using (new EditorGUI.DisabledScope(i.Renderer == null || i.OffendingBone == null)) {
-                    if (GUILayout.Button(
-                            new GUIContent("Why?",
-                                "Send this vertex to the Inspect Vertex panel and run a per-weight verdict — useful for understanding why a related weight didn't flag."),
-                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                    if (GUILayout.Button(new GUIContent("?",
+                            "Why? Send this vertex to the Inspect Vertex panel and run a per-weight verdict — useful for understanding why a related weight didn't flag. Result prints to the Unity console."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
                         _inspectRenderer = i.Renderer;
                         _inspectVertexIndex = i.VertexIndex;
                         InspectVertex();
                     }
-                    if (GUILayout.Button(
-                            new GUIContent("Fix",
-                                "Redirect this offending weight to the bone's Humanoid mirror (e.g. RightUpperLeg → LeftUpperLeg). When no mirror is available, zero the weight and renormalise the rest. FBX-imported meshes are cloned to an editable .mesh in Assets/AvatarQol Generated/ before any change."),
-                            EditorStyles.miniButton, GUILayout.Width(40))) {
+                    if (GUILayout.Button(new GUIContent("Fix",
+                            "Redirect this offending weight to the bone's Humanoid mirror (e.g. RightUpperLeg → LeftUpperLeg). When no mirror is available, zero the weight and renormalise the rest. FBX-imported meshes are cloned to an editable .mesh in Assets/AvatarQol Generated/ before any change."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(34))) {
                         var name = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
                         FixIssues(new List<Issue> { i }, $"weight on {name}");
                     }
                 }
             }
-            EditorGUILayout.Space(2);
+            if (expanded) {
+                EditorGUILayout.LabelField(
+                    $"   world pos:  ({i.WorldPosition.x:F4}, {i.WorldPosition.y:F4}, {i.WorldPosition.z:F4})",
+                    AvatarQolStyles.Muted);
+                EditorGUILayout.LabelField(
+                    $"   bone path:  {(i.OffendingBone != null ? AvatarQol.GetGameObjectPath(i.OffendingBone.gameObject) : "(destroyed)")}",
+                    AvatarQolStyles.Muted);
+            }
         }
 
-        private void DrawDebugBar() {
-            DrawNonReadableBanner();
-            DrawVertexInspector();
-            using (new EditorGUILayout.HorizontalScope()) {
-                if (GUILayout.Button(
-                        new GUIContent("Dump weights for selection",
-                            "Print every vertex's bone weights for the currently selected SkinnedMeshRenderer to the Unity console. Useful when an issue you expect isn't being flagged."),
-                        GUILayout.Height(22))) {
-                    DumpSelectedRendererWeights();
-                }
-            }
+        // Scene-view fade-out marker. Stores a single hit; the gizmo
+        // overlay polls _flashUntil and renders a disc until then.
+        private Vector3 _flashPos;
+        private double _flashUntil;
+
+        private void FlashHighlight(Vector3 worldPos) {
+            _flashPos = worldPos;
+            _flashUntil = EditorApplication.timeSinceStartup + 2.0;
+            SceneView.RepaintAll();
         }
 
         private void DrawNonReadableBanner() {
             if (_nonReadableRenderers.Count == 0) return;
-            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox)) {
-                EditorGUILayout.LabelField(
+            if (AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
                     $"{_nonReadableRenderers.Count} renderer(s) skipped — mesh has Read/Write disabled in importer.",
-                    EditorStyles.wordWrappedMiniLabel);
-                if (GUILayout.Button(
-                        new GUIContent($"Enable Read/Write & rescan",
-                            "For every skipped renderer, find its source asset, set Read/Write Enabled in the model importer, reimport, then re-run the scan."),
-                        GUILayout.Width(200), GUILayout.Height(34))) {
-                    EnableReadWriteOnSkippedAndRescan();
-                }
+                    "Enable Read/Write & rescan",
+                    "For every skipped renderer, find its source asset, set Read/Write Enabled in the model importer, reimport, then re-run the scan.")) {
+                EnableReadWriteOnSkippedAndRescan();
             }
         }
 
@@ -595,6 +709,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 sb.AppendLine($"    {boneName}  weight={bw.weight:F4}  humanoid={humanoidSide}  spatial={spatialSide}  →  {verdict}");
             }
             Debug.Log(sb.ToString());
+            _showConsoleNoticeAfterInspect = true;
         }
 
         private static void DrawDivider() {
@@ -915,6 +1030,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 cursor += wCount;
             }
             Debug.Log(sb.ToString());
+            _showConsoleNoticeAfterDump = true;
         }
 
         // ------ Preview ----------------------------------------------------
@@ -1016,6 +1132,17 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ Scene view gizmos -----------------------------------------
 
         private void OnSceneGui(SceneView sceneView) {
+            // Reveal flash — fades out by alpha over the 2s window.
+            if (_flashUntil > EditorApplication.timeSinceStartup) {
+                float remaining = (float)(_flashUntil - EditorApplication.timeSinceStartup) / 2.0f;
+                var prev = Handles.color;
+                Handles.color = new Color(1f, 0.85f, 0.20f, Mathf.Clamp01(remaining));
+                var size = HandleUtility.GetHandleSize(_flashPos) * 0.18f;
+                Handles.DrawWireDisc(_flashPos, sceneView.camera.transform.forward, size);
+                Handles.DrawWireDisc(_flashPos, sceneView.camera.transform.forward, size * 0.6f);
+                Handles.color = prev;
+                sceneView.Repaint();
+            }
             if (!_showGizmos || _issues.Count == 0) return;
             var prevColor = Handles.color;
             Handles.color = new Color(1f, 0.25f, 0.25f, 0.95f);
