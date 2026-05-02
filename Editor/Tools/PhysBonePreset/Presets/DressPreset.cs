@@ -29,12 +29,31 @@ namespace WhyKnot.AvatarQol.Tools.Presets {
             float score = 0f;
             if (a.NearestHumanoidBoneType == HumanBodyBones.Hips) score += 0.35f;
             else if (a.NearestHumanoidBoneType == HumanBodyBones.Spine) score += 0.2f;
-            if (a.Chains.Count >= 4) score += 0.25f;
-            else if (a.Chains.Count >= 6) score += 0.35f;
+            // Chain-count buckets are mutually exclusive — was additive before,
+            // so 6+ chains scored 0.60 against the supposed-0..1 budget.
+            if (a.Chains.Count >= 6) score += 0.35f;
+            else if (a.Chains.Count >= 4) score += 0.25f;
             float vert = ScaleHelpers.Verticality(a.AverageChainOrientationLocal);
             if (vert > 0.7f) score += 0.3f;
             else if (vert > 0.5f) score += 0.15f;
             return Mathf.Clamp01(score);
+        }
+
+        public System.Collections.Generic.IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis a) {
+            if (a.Chains.Count == 0) { yield return new ScoringSignal("no chains detected", 0f); yield break; }
+            if (a.NearestHumanoidBoneType == HumanBodyBones.Hips)
+                yield return new ScoringSignal("under Hips", 0.35f);
+            else if (a.NearestHumanoidBoneType == HumanBodyBones.Spine)
+                yield return new ScoringSignal("under Spine", 0.2f);
+            if (a.Chains.Count >= 6)
+                yield return new ScoringSignal($"{a.Chains.Count} chains (panel-skirt range)", 0.35f);
+            else if (a.Chains.Count >= 4)
+                yield return new ScoringSignal($"{a.Chains.Count} chains", 0.25f);
+            float vert = ScaleHelpers.Verticality(a.AverageChainOrientationLocal);
+            if (vert > 0.7f)
+                yield return new ScoringSignal($"chains hang vertically (verticality {vert:F2})", 0.3f);
+            else if (vert > 0.5f)
+                yield return new ScoringSignal($"chains hang mostly down (verticality {vert:F2})", 0.15f);
         }
 
         public PhysBonePlan BuildPlan(BoneSelectionAnalysis a) {

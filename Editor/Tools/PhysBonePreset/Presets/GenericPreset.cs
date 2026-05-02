@@ -20,6 +20,10 @@ namespace WhyKnot.AvatarQol.Tools.Presets {
 
         public float SuggestionScore(BoneSelectionAnalysis a) => 0.10f;
 
+        public System.Collections.Generic.IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis a) {
+            yield return new ScoringSignal("baseline (always selectable as fallback)", 0.10f);
+        }
+
         public PhysBonePlan BuildPlan(BoneSelectionAnalysis a) {
             var plan = new PhysBonePlan { PresetId = Id, PresetDisplayName = DisplayName };
             if (a.Chains.Count == 0) {

@@ -40,10 +40,26 @@ namespace WhyKnot.AvatarQol.Tools {
         float SuggestionScore(BoneSelectionAnalysis analysis);
 
         /// <summary>
+        /// Optional: explain how the SuggestionScore was reached. Returns
+        /// per-signal contributions (positive or negative). Used by the UI
+        /// to show "why this preset matched" tooltips on the score bar.
+        /// Default implementation: empty.
+        /// </summary>
+        IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis analysis);
+
+        /// <summary>
         /// Build a plan describing what would be created. Should not mutate
         /// project state.
         /// </summary>
         PhysBonePlan BuildPlan(BoneSelectionAnalysis analysis);
+    }
+
+    internal readonly struct ScoringSignal {
+        public readonly string Name;
+        public readonly float  Contribution;
+        public ScoringSignal(string name, float contribution) {
+            Name = name; Contribution = contribution;
+        }
     }
 
     /// <summary>

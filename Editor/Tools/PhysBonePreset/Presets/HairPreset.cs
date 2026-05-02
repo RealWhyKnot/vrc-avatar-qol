@@ -29,6 +29,20 @@ namespace WhyKnot.AvatarQol.Tools.Presets {
             return Mathf.Clamp01(score);
         }
 
+        public System.Collections.Generic.IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis a) {
+            if (a.Chains.Count == 0) { yield return new ScoringSignal("no chains detected", 0f); yield break; }
+            if (a.NearestHumanoidBoneType == HumanBodyBones.Head)
+                yield return new ScoringSignal("under Head", 0.45f);
+            else if (a.NearestHumanoidBoneType == HumanBodyBones.Neck)
+                yield return new ScoringSignal("under Neck", 0.15f);
+            if (a.Chains.Count >= 4)
+                yield return new ScoringSignal($"{a.Chains.Count} chains (multi-strand)", 0.35f);
+            else if (a.Chains.Count <= 2)
+                yield return new ScoringSignal($"only {a.Chains.Count} chain(s) (looks more like ears)", -0.15f);
+            if (a.AverageChainBoneCount >= 3 && a.AverageChainBoneCount <= 8)
+                yield return new ScoringSignal($"chain length {a.AverageChainBoneCount} matches hair-strand range", 0.15f);
+        }
+
         public PhysBonePlan BuildPlan(BoneSelectionAnalysis a) {
             var plan = new PhysBonePlan { PresetId = Id, PresetDisplayName = DisplayName };
             if (a.Chains.Count == 0) {

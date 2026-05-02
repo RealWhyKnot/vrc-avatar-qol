@@ -31,6 +31,20 @@ namespace WhyKnot.AvatarQol.Tools.Presets {
             return Mathf.Clamp01(score);
         }
 
+        public System.Collections.Generic.IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis a) {
+            if (a.Chains.Count == 0) { yield return new ScoringSignal("no chains detected", 0f); yield break; }
+            if (a.NearestHumanoidBoneType == HumanBodyBones.Hips)
+                yield return new ScoringSignal("under Hips", 0.55f);
+            else if (a.NearestHumanoidBoneType == HumanBodyBones.Spine)
+                yield return new ScoringSignal("under Spine", 0.25f);
+            if (a.AverageChainBoneCount >= 5)
+                yield return new ScoringSignal($"long chain ({a.AverageChainBoneCount} bones)", 0.25f);
+            if (a.Chains.Count == 1)
+                yield return new ScoringSignal("single chain", 0.15f);
+            else if (a.Chains.Count > 3)
+                yield return new ScoringSignal($"{a.Chains.Count} chains (more than typical tail)", -0.2f);
+        }
+
         public PhysBonePlan BuildPlan(BoneSelectionAnalysis a) {
             var plan = new PhysBonePlan { PresetId = Id, PresetDisplayName = DisplayName };
             if (a.Chains.Count == 0) {

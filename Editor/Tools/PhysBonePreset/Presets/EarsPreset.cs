@@ -22,14 +22,26 @@ namespace WhyKnot.AvatarQol.Tools.Presets {
         public float SuggestionScore(BoneSelectionAnalysis a) {
             if (a.Chains.Count == 0) return 0f;
             float score = 0f;
-            // Under Head?
             if (a.NearestHumanoidBoneType == HumanBodyBones.Head) score += 0.6f;
             else if (a.NearestHumanoidBoneType == HumanBodyBones.Neck) score += 0.3f;
-            // Short chains?
             if (a.AverageChainBoneCount >= 1 && a.AverageChainBoneCount <= 4) score += 0.3f;
-            // Multiple chains? Two ears is the canonical case.
             if (a.Chains.Count >= 2 && a.Chains.Count <= 4) score += 0.1f;
             return Mathf.Clamp01(score);
+        }
+
+        public System.Collections.Generic.IEnumerable<ScoringSignal> ExplainScore(BoneSelectionAnalysis a) {
+            if (a.Chains.Count == 0) {
+                yield return new ScoringSignal("no chains detected", 0f);
+                yield break;
+            }
+            if (a.NearestHumanoidBoneType == HumanBodyBones.Head)
+                yield return new ScoringSignal("under Head", 0.6f);
+            else if (a.NearestHumanoidBoneType == HumanBodyBones.Neck)
+                yield return new ScoringSignal("under Neck", 0.3f);
+            if (a.AverageChainBoneCount >= 1 && a.AverageChainBoneCount <= 4)
+                yield return new ScoringSignal($"chain length {a.AverageChainBoneCount} matches ear range", 0.3f);
+            if (a.Chains.Count >= 2 && a.Chains.Count <= 4)
+                yield return new ScoringSignal($"{a.Chains.Count} chains (ear-pair / horn-set)", 0.1f);
         }
 
         public PhysBonePlan BuildPlan(BoneSelectionAnalysis a) {
