@@ -1,0 +1,168 @@
+name: Release
+
+# Cuts a VPM-installable release on tag push (v*).
+#   1. Validates package.json (name, version-matches-tag)
+#   2. Stages a clean copy of the package contents
+#   3. Rewrites the staged package.json's `url` field to the predicted
+#      release-asset URL (so the manifest inside the zip matches what
+#      VCC fetches)
+#   4. Builds <name>-<version>.zip
+#   5. Creates a GitHub Release with both the zip and the rewritten
+#      package.json as separate assets (the listing builder fetches the
+#      bare package.json by name to avoid unzipping)
+#   6. Pings the listing repo (RealWhyKnot/whyknot-vpm) to rebuild
+#      vpm.whyknot.dev/index.json so the new version shows up immediately
+#
+# The listing-rebuild ping is best-effort: it requires a PAT secret named
+# LISTING_DISPATCH_TOKEN with `contents: write` on whyknot-vpm. If the
+# secret is missing, the release still succeeds; the listing rebuilds via
+# its daily cron within 24h instead.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re-)release (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing tag=$tag (version=$version)"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Validate package.json
+        id: pkg
+        run: |
+          set -euo pipefail
+          if [ ! -f package.json ]; then
+            echo "::error::package.json missing at repo root"
+            exit 1
+          fi
+          name=$(jq -r '.name // empty' package.json)
+          pkg_version=$(jq -r '.version // empty' package.json)
+          tag_version="${{ steps.tag.outputs.version }}"
+          if [ -z "$name" ] || [ -z "$pkg_version" ]; then
+            echo "::error::package.json is missing 'name' or 'version'"
+            exit 1
+          fi
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "::error::package.json version ($pkg_version) does not match tag ($tag_version). Bump package.json and re-tag."
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Package $name @ $pkg_version OK"
+
+      - name: Stage and rewrite package.json url
+        id: stage
+        run: |
+          set -euo pipefail
+          name="${{ steps.pkg.outputs.name }}"
+          version="${{ steps.tag.outputs.version }}"
+          tag="${{ steps.tag.outputs.tag }}"
+          zipname="${name}-${version}.zip"
+          asset_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${zipname}"
+
+          mkdir staging
+          # Ship: package.json, README, LICENSE, CHANGELOG, Editor/, Runtime/ (if any)
+          # Drop: VCS, CI, contributor-facing, IDE noise, wiki, prior zip artifacts
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.claude' \
+            --exclude='.vscode' \
+            --exclude='.vs' \
+            --exclude='.idea' \
+            --exclude='wiki' \
+            --exclude='CONTRIBUTING.md' \
+            --exclude='staging' \
+            --exclude='*.zip' \
+            --exclude='*.bak' \
+            ./ staging/
+
+          # Rewrite the staged package.json's url to the canonical release-asset URL.
+          # The original on main can stay frozen at v1.0.0; releases get the right url.
+          jq --arg url "$asset_url" '.url = $url' staging/package.json > staging/package.json.new
+          mv staging/package.json.new staging/package.json
+
+          (cd staging && zip -rq "../$zipname" .)
+          # Also publish the rewritten package.json as a separate asset so the
+          # listing builder can fetch it without unzipping.
+          cp staging/package.json package.json.release
+          sha256=$(sha256sum "$zipname" | awk '{print $1}')
+          size=$(stat -c%s "$zipname")
+          echo "zipname=$zipname" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "size=$size" >> "$GITHUB_OUTPUT"
+          echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT"
+          echo "Built $zipname ($size bytes, sha256=$sha256)"
+          ls -la "$zipname" package.json.release
+          unzip -l "$zipname" | head -40
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          zip="${{ steps.stage.outputs.zipname }}"
+          sha="${{ steps.stage.outputs.sha256 }}"
+          size="${{ steps.stage.outputs.size }}"
+          asset_url="${{ steps.stage.outputs.asset_url }}"
+          notes=$(cat <<EOF
+          VPM package release.
+
+          - Zip: \`$zip\` ($size bytes)
+          - SHA256: \`$sha\`
+          - Direct download: $asset_url
+
+          Install via VCC by adding the listing at \`https://vpm.whyknot.dev/index.json\`.
+          EOF
+          )
+          # Move the package.json sidecar to its final filename right before upload.
+          mv package.json.release package.json
+          gh release create "$tag" \
+            "$zip" "package.json" \
+            --title "$tag" \
+            --notes "$notes" \
+            --verify-tag
+
+      - name: Trigger VPM listing rebuild
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.LISTING_DISPATCH_TOKEN || github.token }}
+        run: |
+          set +e
+          if gh api repos/RealWhyKnot/whyknot-vpm/dispatches \
+                  -X POST -f event_type=rebuild-listing 2>err.log; then
+            echo "Listing rebuild dispatched."
+          else
+            echo "::warning::Cross-repo dispatch failed (most likely the LISTING_DISPATCH_TOKEN secret is missing or under-scoped)."
+            echo "::warning::The listing will still rebuild via its daily cron within 24h. To make it instant,"
+            echo "::warning::create a fine-grained PAT with 'contents: write' on RealWhyKnot/whyknot-vpm and save it as the LISTING_DISPATCH_TOKEN secret in this repo."
+            cat err.log || true
+          fi
