@@ -16,34 +16,23 @@ More tools to come — see the [wiki](https://github.com/RealWhyKnot/vrc-avatar-
 
 ## Installation
 
-Drop the `Editor/` folder into your Unity project under any path that ends in (or contains) `Editor/`. Unity compiles it as an editor-only assembly automatically.
+### VCC (recommended)
 
-```
-Assets/
-  YourFolder/
-    Editor/
-      AvatarQol.cs
-      HumanoidSideMap.cs
-      Tools/
-        WeightSanityCheckTool.cs
-        WeightSanityCheckWindow.cs
-        PhysBonePreset/
-          IPhysBonePreset.cs
-          BoneSelectionAnalysis.cs
-          PhysBonePlanApplier.cs
-          PhysBonePresetTool.cs
-          PhysBonePresetWindow.cs
-          Presets/
-            GenericPreset.cs
-            EarsPreset.cs
-            TailPreset.cs
-            HairPreset.cs
-            DressPreset.cs
-```
+Add the WhyKnot VPM listing to the [VRChat Creator Companion](https://creators.vrchat.com/), then this package shows up under **Manage Project → Add Package**.
 
-No asmdef, no dependencies. Tested on Unity **2022.3**.
+1. Click [this `vcc://` link](vcc://vpm/addRepo?url=https://vpm.whyknot.dev/index.json) — VCC opens and pre-fills the listing URL.
+2. Or, in VCC: **Settings → Packages → Add Repository**, paste `https://vpm.whyknot.dev/index.json`, click **I Understand, Add Repository**.
+3. Open any project, click **Manage Project**, find **Avatar QoL** in the package list, hit **Add**.
 
-For per-clone setup (symlink-for-development, etc.) see the [Installation](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Installation) wiki page.
+Unity compiles the package into a dedicated `dev.whyknot.avatar-qol.Editor` assembly (`Editor/` only — nothing leaks into runtime builds). Hard-depends on `com.vrchat.avatars` (≥ 3.5.0); VCC will refuse to install without the VRChat Avatars SDK present.
+
+### Manual install
+
+For Unity projects not managed by VCC: download `dev.whyknot.avatar-qol-X.Y.Z.zip` from [the latest release](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/latest), unzip into `Packages/dev.whyknot.avatar-qol/` (so `Packages/dev.whyknot.avatar-qol/package.json` exists), and Unity's Package Manager picks it up on next refresh.
+
+Tested on Unity **2022.3** with VRChat Avatars SDK **3.5+**.
+
+For per-clone development setup (symlink-for-development, etc.) see the [Installation](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Installation) wiki page.
 
 ## Adding your own tool
 
