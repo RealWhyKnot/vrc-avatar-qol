@@ -1,0 +1,25 @@
+{
+    "name": "dev.whyknot.avatar-qol.Editor",
+    "rootNamespace": "WhyKnot.AvatarQol",
+    "references": [
+        "VRC.SDK3.Dynamics.PhysBone",
+        "VRC.Dynamics"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "3.0.0",
+            "define": "VRC_SDK_VRCSDK3"
+        }
+    ],
+    "noEngineReferences": false
+}
