@@ -1,7 +1,7 @@
 {
   "name": "dev.whyknot.avatar-qol",
   "displayName": "Avatar QoL",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "unity": "2022.3",
   "description": "Editor tools for VRChat avatars: weight sanity check, PhysBone presets, and other heuristic-driven QoL utilities. Catches the kind of subtle issues (cross-side weight bleed, mis-tuned PhysBones) that don't surface until they're already in your scene.",
   "author": {
@@ -9,7 +9,7 @@
     "url": "https://whyknot.dev"
   },
   "license": "GPL-3.0-or-later",
-  "url": "https://github.com/RealWhyKnot/vrc-avatar-qol/releases/download/v1.0.0/dev.whyknot.avatar-qol-1.0.0.zip",
+  "url": "https://github.com/RealWhyKnot/vrc-avatar-qol/releases/download/v1.0.1/dev.whyknot.avatar-qol-1.0.1.zip",
   "documentationUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol",
   "changelogUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol/blob/main/CHANGELOG.md",
   "vpmDependencies": {

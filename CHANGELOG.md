@@ -13,6 +13,14 @@ _No notable changes since the last release._
 
 ---
 
+## [1.0.1](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.0.1) -- 2026-05-07
+
+### Changed
+- License: switched from MIT to GPL-3.0-or-later. Same set of users can use, modify, and redistribute; downstream forks now propagate the GPL terms instead of MIT's permissive ones.
+- Repo infra: auto-maintained `CHANGELOG.md` via verified bot commits on every push to `main` (conventional-commit subjects bucket into Added/Changed/Fixed). Branch protection ruleset on `main` now requires signed commits.
+
+---
+
 ## [1.0.0](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.0.0) -- 2026-05-03
 
 First release as a VRChat Package Manager (VPM) package, installable via the Creator Companion at `https://vpm.whyknot.dev/index.json`.
