@@ -115,10 +115,12 @@ jobs:
           cp staging/package.json package.json.release
           sha256=$(sha256sum "$zipname" | awk '{print $1}')
           size=$(stat -c%s "$zipname")
-          echo "zipname=$zipname" >> "$GITHUB_OUTPUT"
-          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
-          echo "size=$size" >> "$GITHUB_OUTPUT"
-          echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT"
+          {
+            echo "zipname=$zipname"
+            echo "sha256=$sha256"
+            echo "size=$size"
+            echo "asset_url=$asset_url"
+          } >> "$GITHUB_OUTPUT"
           echo "Built $zipname ($size bytes, sha256=$sha256)"
           ls -la "$zipname" package.json.release
           unzip -l "$zipname" | head -40
