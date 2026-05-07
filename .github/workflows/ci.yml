@@ -1,7 +1,7 @@
 name: CI
 
 # Light CI for a Unity-package-source repo. We don't run Unity itself here
-# (heavy, requires a license, slow) — that can be added later if it pays off.
+# (heavy, requires a license, slow) -- that can be added later if it pays off.
 # What we DO check: workflow YAML is valid (actionlint).
 
 on:

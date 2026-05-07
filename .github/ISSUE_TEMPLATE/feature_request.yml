@@ -35,4 +35,4 @@ body:
     id: extra-context
     attributes:
       label: Additional context
-      description: Screenshots, links to similar features in other tools, references — anything that helps.
+      description: Screenshots, links to similar features in other tools, references -- anything that helps.

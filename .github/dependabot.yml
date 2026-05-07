@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # GitHub Actions runners — keep workflow action versions current.
+  # GitHub Actions runners -- keep workflow action versions current.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

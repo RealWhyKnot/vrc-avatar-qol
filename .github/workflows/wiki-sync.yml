@@ -40,7 +40,7 @@ jobs:
           # doesn't collide with the source-of-truth wiki/ folder already on disk.
           if ! git clone --depth 1 "$REPO_URL" wiki_remote 2>clone.err; then
             if grep -qi "repository not found" clone.err; then
-              echo "::warning::Wiki repo doesn't exist yet — visit the wiki on github.com and create the first page, then re-run this workflow."
+              echo "::warning::Wiki repo doesn't exist yet -- visit the wiki on github.com and create the first page, then re-run this workflow."
               cat clone.err
               exit 0
             fi

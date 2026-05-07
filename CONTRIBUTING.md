@@ -1,6 +1,6 @@
 # Contributing
 
-Welcome, and thanks for taking an interest. Bug reports, feature requests, and pull requests are all welcome — open an issue or PR against this repo.
+Welcome, and thanks for taking an interest. Bug reports, feature requests, and pull requests are all welcome; open an issue or PR against this repo.
 
 ## Before you start
 
@@ -9,7 +9,7 @@ Welcome, and thanks for taking an interest. Bug reports, feature requests, and p
 
 ## Setting up the dev loop
 
-There's no build system here — `vrc-avatar-qol` is a flat folder of `.cs` files compiled by Unity itself.
+There's no build system here; `vrc-avatar-qol` is a flat folder of `.cs` files compiled by Unity itself.
 
 **Prerequisites:**
 
@@ -44,7 +44,7 @@ The wiki is **source-controlled at `wiki/`** in this repo. That means:
 ## Submitting a PR
 
 - Branch from `main`. Open the PR against `main`.
-- The [PR template](.github/PULL_REQUEST_TEMPLATE.md) auto-populates the description. Fill the checklist honestly — particularly the "compiles in Unity 2022.3.x with no console errors" item.
+- The [PR template](.github/PULL_REQUEST_TEMPLATE.md) auto-populates the description. Fill the checklist honestly, particularly the "compiles in Unity 2022.3.x with no console errors" item.
 - **Touched a tool?** Update or add the corresponding section in [`wiki/Tools-Overview.md`](wiki/Tools-Overview.md). UI changes deserve a screenshot.
 - **Heuristic changes?** Note any tradeoffs in the PR description (false-positive vs false-negative shifts, runtime cost on big meshes).
 - Keep PRs focused. Mixing unrelated changes makes review harder for everyone.
@@ -57,9 +57,9 @@ The wiki is **source-controlled at `wiki/`** in this repo. That means:
 ## Commit message style
 
 - Conventional-ish prefixes are appreciated but not enforced: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `ci:`.
-- Keep the subject ≤72 characters.
+- Keep the subject <=72 characters.
 - The body is for the *why*. The diff already shows the *what*.
 
 ## Reporting security issues
 
-Please don't file a public issue for a security vulnerability. Use GitHub's **Security tab → Report a vulnerability** for a private disclosure. See [SECURITY.md](.github/SECURITY.md) for details.
+Please don't file a public issue for a security vulnerability. Use GitHub's **Security tab > Report a vulnerability** for a private disclosure. See [SECURITY.md](.github/SECURITY.md) for details.

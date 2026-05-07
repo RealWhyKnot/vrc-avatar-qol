@@ -15,7 +15,7 @@ Editor/
 
 ## Tool registration
 
-Tools register entry points via Unity's standard `[MenuItem]` attributes. The framework doesn't impose a registration API — it would be over-engineered for the current scope.
+Tools register entry points via Unity's standard `[MenuItem]` attributes. The framework doesn't impose a registration API -- it would be over-engineered for the current scope.
 
 Convention: every tool's top-level menu entry lives under `Tools/Avatar QoL/<Name>...`. If the tool has a sensible right-click trigger, it also registers `GameObject/Avatar QoL/<Action>...` (visible in the hierarchy right-click menu, fires once per multi-select).
 
@@ -23,11 +23,11 @@ Convention: every tool's top-level menu entry lives under `Tools/Avatar QoL/<Nam
 
 The most reusable bit of the framework. Given an `Animator` with `isHuman == true`, it builds:
 
-- A `Transform → HumanBodyBones` reverse map (one entry per bound Humanoid bone).
-- A `Transform → BoneSide` cache (memoised on first query).
-- The avatar's "left" sign in Hips local space, derived from the actual position of `LeftUpperLeg` relative to `Hips`. This means we don't have to assume any specific Unity coordinate convention — a vertex is on the avatar's left iff `sign(hipsLocalPos.x) == LeftSignInHipsLocal`.
+- A `Transform -> HumanBodyBones` reverse map (one entry per bound Humanoid bone).
+- A `Transform -> BoneSide` cache (memoised on first query).
+- The avatar's "left" sign in Hips local space, derived from the actual position of `LeftUpperLeg` relative to `Hips`. This means we don't have to assume any specific Unity coordinate convention -- a vertex is on the avatar's left iff `sign(hipsLocalPos.x) == LeftSignInHipsLocal`.
 
-Side resolution walks the parent chain of any queried Transform until it hits a Humanoid bone, then reads the side off the bone's name (`Left*` / `Right*` → side; everything else, including Hips/Spine/Chest/Neck/Head/etc. → Center). The result is cached, so repeated lookups during a vertex-walk are O(1) after the first hit.
+Side resolution walks the parent chain of any queried Transform until it hits a Humanoid bone, then reads the side off the bone's name (`Left*` / `Right*` -> side; everything else, including Hips/Spine/Chest/Neck/Head/etc. -> Center). The result is cached, so repeated lookups during a vertex-walk are O(1) after the first hit.
 
 `ClassifyWorldPosition(worldPos, centerMargin)` extends the same logic to a free-floating world position: transform into Hips local space, project onto the left axis, return Left/Right/Center based on a configurable margin around the centerline.
 
@@ -35,7 +35,7 @@ Side resolution walks the parent chain of any queried Transform until it hits a 
 
 Three steps for each renderer:
 
-1. **Bone tagging.** For every entry in `SkinnedMeshRenderer.bones`, query `HumanoidSideMap.GetSide(bone)`. Cache into a `BoneSide[]` parallel to the bones array. Skip the renderer entirely if it has no Left or no Right bones (e.g. a head-only mesh — nothing to cross-contaminate).
+1. **Bone tagging.** For every entry in `SkinnedMeshRenderer.bones`, query `HumanoidSideMap.GetSide(bone)`. Cache into a `BoneSide[]` parallel to the bones array. Skip the renderer entirely if it has no Left or no Right bones (e.g. a head-only mesh -- nothing to cross-contaminate).
 
 2. **Vertex classification.** Iterate `Mesh.vertices` (bind-pose, mesh local space). For each vertex, transform to world via the renderer's transform, then to Hips local space. Classify as Left/Right/Center.
 
@@ -45,11 +45,11 @@ Center-banded vertices are deliberately not flagged: it's normal for spine verti
 
 ## Why bind-pose, not the live skinned mesh?
 
-Skinning is what we're checking — using the deformed mesh would be circular. The bind-pose vertex position is also the only stable spatial input we have when a scene first opens (no animation has played). It's accurate enough to classify which side of the avatar a vertex belongs to, which is all we need.
+Skinning is what we're checking -- using the deformed mesh would be circular. The bind-pose vertex position is also the only stable spatial input we have when a scene first opens (no animation has played). It's accurate enough to classify which side of the avatar a vertex belongs to, which is all we need.
 
 ## Undo and SetDirty
 
-The Weight Sanity Check is read-only — it never mutates project state. If you add a tool that does (e.g. a "zero out cross-side weights" fixer), wrap operations in:
+The Weight Sanity Check is read-only -- it never mutates project state. If you add a tool that does (e.g. a "zero out cross-side weights" fixer), wrap operations in:
 
 ```csharp
 var group = Undo.GetCurrentGroup();

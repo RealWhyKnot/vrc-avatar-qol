@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before filing, skim the [Troubleshooting wiki page](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Troubleshooting) — common failure modes and false-positive scenarios are documented there.
+        Before filing, skim the [Troubleshooting wiki page](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Troubleshooting) -- common failure modes and false-positive scenarios are documented there.
 
   - type: textarea
     id: what-happened
@@ -72,4 +72,4 @@ body:
     id: extra-context
     attributes:
       label: Anything else?
-      description: Screenshots, scene/prefab snippets, hardware notes — anything that helps reproduce.
+      description: Screenshots, scene/prefab snippets, hardware notes -- anything that helps reproduce.

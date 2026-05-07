@@ -8,4 +8,4 @@ The pages in this directory are the **source of truth** for the GitHub Wiki at h
 
 ## One-time bootstrap
 
-The GitHub Wiki repo (`vrc-avatar-qol.wiki.git`) only materialises after a maintainer creates the first page through the web UI. If the wiki-sync workflow logs a "wiki repo doesn't exist yet" warning, visit https://github.com/RealWhyKnot/vrc-avatar-qol/wiki, click **Create the first page**, save any placeholder text — it'll be overwritten by the next sync.
+The GitHub Wiki repo (`vrc-avatar-qol.wiki.git`) only materialises after a maintainer creates the first page through the web UI. If the wiki-sync workflow logs a "wiki repo doesn't exist yet" warning, visit https://github.com/RealWhyKnot/vrc-avatar-qol/wiki, click **Create the first page**, save any placeholder text -- it'll be overwritten by the next sync.

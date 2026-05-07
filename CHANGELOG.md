@@ -2,12 +2,12 @@
 
 All notable changes to this project will be documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] — 2026-05-03
+## [1.0.0] - 2026-05-03
 
 First release as a VRChat Package Manager (VPM) package, installable via the Creator Companion at `https://vpm.whyknot.dev/index.json`.
 
 ### Added
-- VPM package metadata (`package.json`) declaring `dev.whyknot.avatar-qol` with a hard `vpmDependencies` on `com.vrchat.avatars` (≥ 3.5.0).
+- VPM package metadata (`package.json`) declaring `dev.whyknot.avatar-qol` with a hard `vpmDependencies` on `com.vrchat.avatars` (>= 3.5.0).
 - Editor assembly definition (`Editor/dev.whyknot.avatar-qol.Editor.asmdef`) scoping the tools to the Editor platform and gating the SDK-conditional code via `versionDefines` for `VRC_SDK_VRCSDK3`.
 
 ### Changed

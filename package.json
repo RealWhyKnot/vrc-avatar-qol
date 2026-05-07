@@ -8,7 +8,7 @@
     "name": "WhyKnot",
     "url": "https://whyknot.dev"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "url": "https://github.com/RealWhyKnot/vrc-avatar-qol/releases/download/v1.0.0/dev.whyknot.avatar-qol-1.0.0.zip",
   "documentationUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol",
   "changelogUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol/blob/main/CHANGELOG.md",

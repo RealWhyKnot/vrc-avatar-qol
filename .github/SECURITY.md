@@ -22,4 +22,4 @@ In scope:
 Out of scope (won't be treated as security issues):
 - Bugs that require an attacker to already have write access to your project files.
 - Bugs in upstream dependencies (Unity). Report those upstream.
-- "The tool flagged something that wasn't actually wrong" — file a normal issue.
+- "The tool flagged something that wasn't actually wrong" -- file a normal issue.

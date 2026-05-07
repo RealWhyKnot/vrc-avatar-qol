@@ -2,7 +2,7 @@
 
 `vrc-avatar-qol` ships as a flat folder of `.cs` files compiled by Unity itself. There's no asmdef, no package manifest, no native binaries.
 
-## Option A — Drop into your project (simplest)
+## Option A -- Drop into your project (simplest)
 
 Copy the `Editor/` folder into your Unity project under any path that ends in (or contains) `Editor/`.
 
@@ -17,7 +17,7 @@ Assets/
         WeightSanityCheckWindow.cs
 ```
 
-## Option B — Symlink for live development
+## Option B -- Symlink for live development
 
 Clone the repo somewhere outside your Unity project, then symlink the `Editor/` folder into the project. Edits in the repo apply to the live project without copy-pasting.
 
@@ -37,8 +37,8 @@ Focus Unity once so it compiles the new scripts. The Tools menu and the GameObje
 
 ## Compatibility
 
-- **Unity 2022.3.x** — primary target. Older versions may work but aren't tested.
-- **Humanoid avatars** — the Weight Sanity Check needs a Humanoid Animator. Generic / non-Humanoid rigs aren't supported by that tool (other tools may have different requirements; see [[Tools-Overview]]).
+- **Unity 2022.3.x** -- primary target. Older versions may work but aren't tested.
+- **Humanoid avatars** -- the Weight Sanity Check needs a Humanoid Animator. Generic / non-Humanoid rigs aren't supported by that tool (other tools may have different requirements; see [[Tools-Overview]]).
 
 ## Uninstalling
 

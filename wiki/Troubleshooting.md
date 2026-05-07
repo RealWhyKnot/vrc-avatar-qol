@@ -15,9 +15,9 @@ The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hi
 
 A few common causes:
 
-- **Mesh that bridges sides by design.** Capes, dresses, tails, scarves often have legitimate weights from both Left and Right bones. Add the renderer to the *Exclude renderers* list at the top of the window — those won't be scanned.
+- **Mesh that bridges sides by design.** Capes, dresses, tails, scarves often have legitimate weights from both Left and Right bones. Add the renderer to the *Exclude renderers* list at the top of the window -- those won't be scanned.
 - **Center margin too small.** Spine/torso vertices very close to the centerline can swing across the centerline as bind-pose noise. Raise *Center margin* (default 0.02 m) until the false-positives go away.
-- **Weight floor too low.** If you're seeing flagged weights below 0.05, raise the *Weight floor* — those are usually rounding / smoothing noise, not real cross-side bleed.
+- **Weight floor too low.** If you're seeing flagged weights below 0.05, raise the *Weight floor* -- those are usually rounding / smoothing noise, not real cross-side bleed.
 - **Custom bones outside the Humanoid hierarchy.** A bone with no Humanoid ancestor reports as `Unknown` and is skipped by the check. If your custom bones live under a chest/parent that ISN'T tagged Humanoid, the side won't propagate. Re-parent the custom chain under the appropriate Humanoid bone (e.g. `LeftShoulder` for a left-arm prop chain).
 
 ## Weight Sanity Check: missing real issues
