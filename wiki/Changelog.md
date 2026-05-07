@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [Semantic Versioning](https://semver.org/).
+All notable changes to vrc-avatar-qol. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [Semantic Versioning](https://semver.org/).
+
+The most recent release is at the top.
 
 <!-- Entries under "## Unreleased" are appended automatically by the changelog-append GitHub
      workflow on every push to main, then promoted to the versioned section by release.yml when

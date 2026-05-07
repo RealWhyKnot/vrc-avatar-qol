@@ -1,0 +1,224 @@
+name: Changelog append
+
+# On every push to main, walk the commits in the push range and append bullets
+# under "## Unreleased" in CHANGELOG.md (root, embedded into the in-app viewer)
+# and wiki/Changelog.md (mirrored to the GitHub Wiki). Then commit the updated
+# files back to main via the GraphQL createCommitOnBranch mutation (so the
+# resulting commit is signed server-side with GitHub's bot key and clears the
+# "Commits must have verified signatures" protected-branch rule on main; a
+# plain `git push` of an unsigned commit gets GH006). Then trigger wiki-sync
+# so the Wiki reflects the new state without waiting for the next manual push.
+#
+# A commit made by GITHUB_TOKEN (whether via push or via createCommitOnBranch)
+# does NOT trigger workflow runs, so the appender's own commit will not recurse.
+# The wiki-sync workflow is fired explicitly at the end of this job for the
+# same reason -- its push trigger wouldn't fire off a token-authored commit.
+# Belt-and-braces: the commit message carries [skip changelog] and the job's
+# `if:` filter rejects messages with that marker, so even a manual re-trigger
+# or non-token actor cannot recurse.
+
+on:
+  push:
+    branches: [main]
+    # Skip pushes that only touch the changelog files themselves or pure-doc
+    # paths the user has already taken care of. Saves a workflow run on
+    # release.yml's promotion commit (it modifies CHANGELOG.md exclusively).
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'wiki/Changelog.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
+  # Manual trigger so a failed run (e.g. transient GraphQL error, or a push
+  # whose head_commit message accidentally tripped the recursion filter) can
+  # be re-driven without waiting for the next push.
+  workflow_dispatch:
+    inputs:
+      range:
+        description: 'Override commit range (default: HEAD~1..HEAD).'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # push the appender's commit back to main
+  actions: write    # gh workflow run wiki-sync.yml
+
+concurrency:
+  # Serialise: two concurrent appenders racing to push could lose entries.
+  group: changelog-append
+  cancel-in-progress: false
+
+jobs:
+  append:
+    # Recursion guard for the push trigger: skip if the bot was the actor
+    # (the appender's own commit) or if the head commit carries the marker
+    # in its subject line (release.yml's promotion commit, manual back-fill
+    # on a docs-only push, etc.). workflow_dispatch always runs -- the
+    # operator picked it on purpose.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip changelog]')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history so the before..after range resolves
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute push range
+        id: range
+        shell: bash
+        env:
+          DISPATCH_RANGE: ${{ inputs.range }}
+        run: |
+          set -euo pipefail
+
+          # workflow_dispatch path: honour the manual range input if set,
+          # otherwise default to HEAD~1..HEAD (last commit).
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ -n "$DISPATCH_RANGE" ]]; then
+              range="$DISPATCH_RANGE"
+              echo "workflow_dispatch with input range: $range"
+            else
+              range="HEAD~1..HEAD"
+              echo "workflow_dispatch with default range: $range"
+            fi
+            echo "range=$range" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before='${{ github.event.before }}'
+          after='${{ github.event.after }}'
+
+          # First push to a branch arrives with before=000... -- fall back to
+          # the parent of the current commit so we still process the head.
+          if [[ "$before" =~ ^0+$ ]]; then
+            echo "First-push detection (before is zeros) -- using HEAD~1..HEAD."
+            range="HEAD~1..HEAD"
+          else
+            # Force-push edge case: if before isn't an ancestor, the simple
+            # before..after range can include unrelated commits. Detect and
+            # fall back to single-commit mode.
+            if git merge-base --is-ancestor "$before" "$after" 2>/dev/null; then
+              range="$before..$after"
+            else
+              echo "before $before is not an ancestor of $after (force-push?) -- using HEAD~1..HEAD."
+              range="HEAD~1..HEAD"
+            fi
+          fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Computed range: $range"
+
+      - name: Append commits to CHANGELOG
+        id: append
+        shell: pwsh
+        run: |
+          ./.github/scripts/Update-Changelog.ps1 -Mode Append -Range '${{ steps.range.outputs.range }}'
+
+          # Mark whether anything actually changed so the next steps can skip.
+          $changed = & git status --porcelain CHANGELOG.md wiki/Changelog.md
+          if ([string]::IsNullOrWhiteSpace($changed)) {
+            "changed=false" >> $env:GITHUB_OUTPUT
+            Write-Host "No changelog updates produced."
+          } else {
+            "changed=true"  >> $env:GITHUB_OUTPUT
+            Write-Host "Changelog updates ready to commit."
+            & git --no-pager diff --stat CHANGELOG.md wiki/Changelog.md
+          }
+
+      - name: Commit via createCommitOnBranch (verified)
+        if: steps.append.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Use the GraphQL createCommitOnBranch mutation instead of a
+          # plain `git commit && git push`. Mutation-authored commits are
+          # signed server-side with GitHub's bot key, so the resulting
+          # commit is verified -- which is required by the protected-branch
+          # rule on main. Plain push of an unsigned commit gets GH006.
+          # The author + committer default to the actor of GITHUB_TOKEN
+          # (github-actions[bot]) so the commit identity matches the
+          # convention.
+          short_sha="${GITHUB_SHA::7}"
+          expected_oid=$(git rev-parse HEAD)
+          changelog_b64=$(base64 -w 0 CHANGELOG.md)
+          wiki_b64=$(base64 -w 0 wiki/Changelog.md)
+
+          headline="docs(changelog): auto-append entries from ${short_sha} [skip changelog]"
+          body=$(printf '%s\n%s' \
+            'Maintained by .github/workflows/changelog-append.yml.' \
+            'See .github/scripts/Update-Changelog.ps1 for the parsing rules.')
+
+          payload=$(jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "$GITHUB_REF_NAME" \
+            --arg headline "$headline" \
+            --arg body "$body" \
+            --arg oid "$expected_oid" \
+            --arg changelog "$changelog_b64" \
+            --arg wiki "$wiki_b64" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } } }",
+              variables: {
+                input: {
+                  branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                  message: { headline: $headline, body: $body },
+                  fileChanges: {
+                    additions: [
+                      { path: "CHANGELOG.md",      contents: $changelog },
+                      { path: "wiki/Changelog.md", contents: $wiki }
+                    ]
+                  },
+                  expectedHeadOid: $oid
+                }
+              }
+            }')
+
+          response=$(printf '%s' "$payload" | gh api graphql --input -)
+          echo "$response" | jq .
+
+          # gh api exits non-zero on transport errors but a successful 200
+          # with a GraphQL `errors` field passes through silently. Surface it.
+          if echo "$response" | jq -e '.errors // empty' >/dev/null; then
+            echo "::error::createCommitOnBranch returned GraphQL errors"
+            exit 1
+          fi
+
+          new_oid=$(echo "$response" | jq -r '.data.createCommitOnBranch.commit.oid')
+          new_url=$(echo "$response" | jq -r '.data.createCommitOnBranch.commit.url')
+          if [[ -z "$new_oid" || "$new_oid" == "null" ]]; then
+            echo "::error::createCommitOnBranch did not return a commit oid"
+            exit 1
+          fi
+          echo "Verified commit: $new_oid"
+          echo "URL:             $new_url"
+
+          # Belt + braces: confirm GitHub recorded the commit as verified.
+          # Should always be true for a createCommitOnBranch output; if not,
+          # the protected-branch rule would fire on the next workflow run
+          # and we'd rather see it here.
+          verified=$(gh api "repos/$GITHUB_REPOSITORY/commits/$new_oid" --jq '.commit.verification.verified')
+          if [[ "$verified" != "true" ]]; then
+            echo "::error::Commit $new_oid is not verified (got: $verified)"
+            gh api "repos/$GITHUB_REPOSITORY/commits/$new_oid" --jq '.commit.verification'
+            exit 1
+          fi
+          echo "Verification: ok"
+
+      - name: Trigger wiki sync
+        # wiki/Changelog.md changed under github-actions[bot] auth, which
+        # doesn't fire push triggers — kick wiki-sync explicitly so the Wiki
+        # mirrors the new entry without waiting for an unrelated push.
+        if: steps.append.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run wiki-sync.yml --ref main || \
+            echo "::warning::Failed to trigger wiki-sync; the next wiki/** push will pick it up."

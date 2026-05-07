@@ -9,3 +9,6 @@
 
 **Help**
 - [Troubleshooting](Troubleshooting)
+
+**Releases**
+- [Changelog](Changelog)
