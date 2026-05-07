@@ -20,8 +20,8 @@ More tools to come; see the [wiki](https://github.com/RealWhyKnot/vrc-avatar-qol
 
 Add the WhyKnot VPM listing to the [VRChat Creator Companion](https://creators.vrchat.com/), then this package shows up under **Manage Project -> Add Package**.
 
-1. Click [this `vcc://` link](vcc://vpm/addRepo?url=https://vpm.whyknot.dev/index.json) and VCC opens with the listing URL pre-filled.
-2. Or, in VCC: **Settings -> Packages -> Add Repository**, paste `https://vpm.whyknot.dev/index.json`, click **I Understand, Add Repository**.
+1. Click <https://vpm.whyknot.dev/>. The page redirects to a `vcc://` handler URL and VCC opens with the listing pre-filled. Click **I Understand, Add Repository**.
+2. If that doesn't work, in VCC go to **Settings -> Packages -> Add Repository**, paste `https://vpm.whyknot.dev/index.json`, click **I Understand, Add Repository**.
 3. Open any project, click **Manage Project**, find **Avatar QoL** in the package list, hit **Add**.
 
 Unity compiles the package into a dedicated `dev.whyknot.avatar-qol.Editor` assembly (`Editor/` only, nothing leaks into runtime builds). Hard-depends on `com.vrchat.avatars` (>= 3.5.0); VCC will refuse to install without the VRChat Avatars SDK present.
