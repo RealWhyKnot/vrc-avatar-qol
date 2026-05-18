@@ -5,7 +5,7 @@ Common failure modes and false-positive scenarios. If your problem isn't here, [
 ## Menu items don't appear
 
 - **First-time install.** Focus Unity once after dropping in `Editor/`. Unity needs to compile the scripts before the menu items show up.
-- **Tool entry greyed out under `GameObject/Avatar QoL`.** The validator skips entries when the selection isn't appropriate. For Weight Sanity Check this means: select a GameObject with a Humanoid Animator (or one in its descendants).
+- **Tool entry greyed out under `GameObject/WhyKnot/vrc-avatar-qol`.** The validator skips entries when the selection isn't appropriate. For Weight Sanity Check this means: select a GameObject with a Humanoid Animator (or one in its descendants).
 
 ## Weight Sanity Check: "Animator is not Humanoid"
 

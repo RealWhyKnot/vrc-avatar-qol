@@ -34,8 +34,8 @@
 // than the bind-pose position. Pause animator / scrub to T-pose before
 // scanning when in doubt.
 //
-// Preview / debug:
-//   - Per-issue *Preview* button: rotates the offending bone back and forth
+// Wobble / debug:
+//   - Per-issue *Wobble* button: rotates the offending bone back and forth
 //     so the user can watch the deformation. Click again to stop.
 //   - Verbose log: dumps per-renderer scan stats to the console — exactly
 //     why each weight was flagged or skipped, so it's possible to tell
@@ -162,6 +162,8 @@ namespace WhyKnot.AvatarQol.Tools {
             // a half-skipped scan.
             if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
             DrawTitleBar();
+            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+                "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. PhysBone clipping has its own window so this scan stays fast.");
             DrawHeader();
             EditorGUILayout.Space(2);
             DrawScanBar();
@@ -175,7 +177,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
                     new GUIContent("Weight Sanity Check",
-                        "Walk every SkinnedMeshRenderer under a Humanoid Animator and flag vertices weighted to a bone on the avatar's opposite side."),
+                        "Find mesh weights that pull part of the avatar toward the wrong left/right side, then review or fix them."),
                     AvatarQolStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
@@ -187,7 +189,8 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawHeader() {
-            using (AvatarQolStyles.Section("Avatar")) {
+            using (AvatarQolStyles.Section("1. Pick avatar",
+                    "Choose the Humanoid avatar to scan. Optionally narrow the scan to one renderer while debugging an outfit or mesh.")) {
                 AvatarQolStyles.LabeledField(
                     new GUIContent("Animator",
                         "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
@@ -200,7 +203,7 @@ namespace WhyKnot.AvatarQol.Tools {
                         "Animator is not Humanoid. The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hips).");
                 }
                 AvatarQolStyles.LabeledField(
-                    new GUIContent("Limit scan to",
+                    new GUIContent("Only scan renderer",
                         "Optional. When set, Scan only walks this single SkinnedMeshRenderer instead of every renderer under the avatar. Useful when debugging one outfit / mesh without touching the exclusion list. Auto-fills the Inspect Vertex renderer below."),
                     () => {
                         var newLimit = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_limitToRenderer, typeof(SkinnedMeshRenderer), true);
@@ -324,13 +327,13 @@ namespace WhyKnot.AvatarQol.Tools {
                 using (new EditorGUI.DisabledScope(!canScan)) {
                     if (AvatarQolStyles.PrimaryButtonInline(
                             new GUIContent("Scan",
-                                "Walk every SkinnedMeshRenderer under the Animator (or just the 'Limit scan to' renderer if set) and flag vertices weighted to a bone on the avatar's opposite side. Run again any time after a fix to refresh."),
+                                "Walk every SkinnedMeshRenderer under the Animator (or just the renderer selected above) and flag vertices weighted to a bone on the avatar's opposite side. Run again any time after a fix to refresh."),
                             GUILayout.MinWidth(140))) Scan();
                 }
                 using (new EditorGUI.DisabledScope(_previewBone == null)) {
                     if (GUILayout.Button(
-                            new GUIContent("Stop preview",
-                                "Restore the currently-previewed bone to its rest rotation and stop the wobble animation."),
+                            new GUIContent("Stop wobble",
+                                "Restore the currently-wobbled bone to its rest rotation."),
                             GUILayout.Height(28), GUILayout.Width(110))) {
                         StopPreview();
                     }
@@ -348,13 +351,13 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
                     new GUIContent(_issues.Count > 0 ? $"Issues ({_issues.Count})" : "Issues",
-                        "Each row is one offending bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
+                        "Step 3. Each row is one suspicious bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
                     AvatarQolStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
                     if (AvatarQolStyles.PrimaryButtonInline(
                             new GUIContent($"Fix all ({_issues.Count})",
-                                "Apply fixes to every issue currently in the list. Each weight is redirected to its Humanoid mirror when one exists, otherwise zeroed and the remaining weights on that vertex are scaled up. FBX-imported meshes are cloned to editable .mesh files first; the original FBX is never modified."),
+                                "Apply fixes to every issue currently in the list. Each weight is redirected to its matching left/right Humanoid bone when one exists, otherwise it is removed and the remaining weights on that vertex are scaled up. FBX meshes are cloned first; the original FBX is never modified."),
                             GUILayout.Width(150))) {
                         FixIssues(new List<Issue>(_issues), $"{_issues.Count} issue(s)");
                     }
@@ -362,7 +365,10 @@ namespace WhyKnot.AvatarQol.Tools {
                             new GUIContent("Clear",
                                 "Drop the current issue list and clear the gizmo overlay. Doesn't undo any fixes you've already applied."),
                             GUILayout.Height(28), GUILayout.Width(70))) {
-                        _issues.Clear(); _scanSummary = ""; _expandedIssueRows.Clear(); SceneView.RepaintAll();
+                        _issues.Clear();
+                        _scanSummary = "";
+                        _expandedIssueRows.Clear();
+                        SceneView.RepaintAll();
                     }
                 }
             }
@@ -385,7 +391,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 if (_issues.Count == 0) {
                     EditorGUILayout.LabelField(
-                        _scanSummary == "" ? "Pick an Animator and click Scan." : "No issues found.",
+                        _scanSummary == "" ? "Pick an Animator, then click Scan." : "No issues found.",
                         EditorStyles.centeredGreyMiniLabel);
                 } else {
                     // Pre-bucket counts once per draw — was O(n²) before.
@@ -425,6 +431,61 @@ namespace WhyKnot.AvatarQol.Tools {
             }
         }
 
+#if false
+        private void DrawPhysBoneIssueRow(PhysBoneClippingAnalyzer.Issue issue) {
+            var severityColor = issue.Severity == PhysBoneClippingAnalyzer.Severity.High
+                ? AvatarQolStyles.CategoryHumanoid
+                : AvatarQolStyles.ColorWarning;
+            var severityText = issue.Severity == PhysBoneClippingAnalyzer.Severity.High ? "high" : "medium";
+            string boneName = issue.DrivenBone != null ? issue.DrivenBone.name : "(destroyed)";
+            using (new EditorGUILayout.HorizontalScope()) {
+                GUILayout.Space(6);
+                AvatarQolStyles.BadgePill(severityText, severityColor,
+                    issue.Severity == PhysBoneClippingAnalyzer.Severity.High
+                        ? "No effective collider coverage or already-small clearance. This deserves attention."
+                        : "Collider coverage exists or the estimated overlap is smaller, but the area is still worth checking.");
+                EditorGUILayout.LabelField(
+                    new GUIContent(
+                        $"{issue.RendererPath}  v#{issue.VertexIndex}  {boneName}  move~{issue.EstimatedMotion * 100f:0.0}cm  clearance {issue.Clearance * 100f:0.0}cm",
+                        issue.Reason),
+                    AvatarQolStyles.Mono);
+                GUILayout.FlexibleSpace();
+                using (new EditorGUI.DisabledScope(issue.Renderer == null)) {
+                    if (GUILayout.Button(new GUIContent("P", "Ping the renderer in the hierarchy."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                        Selection.activeObject = issue.Renderer;
+                        EditorGUIUtility.PingObject(issue.Renderer);
+                    }
+                }
+                if (GUILayout.Button(new GUIContent("F", "Frame the risky vertex in the Scene view."),
+                        AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                    var sv = SceneView.lastActiveSceneView;
+                    if (sv != null) {
+                        sv.LookAt(issue.WorldPosition, sv.rotation, 0.18f);
+                        sv.Repaint();
+                    }
+                }
+                using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
+                    if (GUILayout.Button(new GUIContent("R", "Reveal the PhysBone-driven transform."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                        Selection.activeObject = issue.DrivenBone;
+                        EditorGUIUtility.PingObject(issue.DrivenBone);
+                        FlashHighlight(issue.WorldPosition);
+                    }
+                    bool isPreviewing = _previewBone == issue.DrivenBone && issue.DrivenBone != null;
+                    if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
+                            "Temporarily wobble the driven transform so you can inspect likely clipping. This does not move the Scene camera."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
+                        if (isPreviewing) StopPreview();
+                        else StartPreview(issue.DrivenBone);
+                    }
+                }
+            }
+            EditorGUILayout.LabelField("   " + issue.Reason, AvatarQolStyles.Muted);
+            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", AvatarQolStyles.Muted);
+        }
+
+#endif
         private void DrawIssueRowCompact(Issue i, int issueIndex) {
             string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
             Color tag; string tagText; string tagTooltip;
@@ -489,9 +550,9 @@ namespace WhyKnot.AvatarQol.Tools {
                         FlashHighlight(i.WorldPosition);
                     }
                     bool isPreviewing = _previewBone == i.OffendingBone && i.OffendingBone != null;
-                    if (GUILayout.Button(new GUIContent(isPreviewing ? "■" : "▶",
-                            "Preview: wobble the offending bone in the Scene view so you can see how the bad weights deform the mesh. Click again to stop."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                    if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
+                            "Temporarily wobble the offending bone so you can see how the bad weights deform the mesh. This does not move the Scene camera."),
+                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
                         if (isPreviewing) StopPreview();
                         else if (i.OffendingBone != null) StartPreview(i.OffendingBone);
                     }

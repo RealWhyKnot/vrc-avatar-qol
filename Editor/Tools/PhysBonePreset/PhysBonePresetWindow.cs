@@ -108,6 +108,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnGUI() {
             DrawSdkBanner();
             DrawTitleBar();
+            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+                "Flow: choose the bones, pick the suggested preset or another card, review the plan, then apply.");
             DrawSelection();
             EditorGUILayout.Space(2);
             DrawAnalysisSummary();
@@ -128,7 +130,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
                     new GUIContent("PhysBone Preset",
-                        "Apply a smart preset to a selection of bones to set up VRChat PhysBones with sensible parameters and colliders."),
+                        "Set up VRChat PhysBones on selected bones using plain presets such as ears, tail, hair, or dress."),
                     AvatarQolStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
@@ -148,7 +150,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // -------- Selection panel --------
 
         private void DrawSelection() {
-            using (AvatarQolStyles.Section($"Bones ({_selection.Count})",
+            using (AvatarQolStyles.Section($"1. Choose bones ({_selection.Count})",
                     "Drop the bones the preset will set up. Each top-level bone you drop in becomes a chain root; descendants are walked automatically. Pick the ear roots, the tail base, the skirt panel anchors, etc.")) {
                 using (new EditorGUILayout.VerticalScope(GUILayout.MinHeight(60), GUILayout.MaxHeight(150))) {
                     _selectionScroll = EditorGUILayout.BeginScrollView(_selectionScroll);
@@ -176,12 +178,12 @@ namespace WhyKnot.AvatarQol.Tools {
                     EditorGUILayout.EndScrollView();
                 }
                 using (new EditorGUILayout.HorizontalScope()) {
-                    if (GUILayout.Button(new GUIContent("Use selection",
+                    if (GUILayout.Button(new GUIContent("Use selected",
                             "Replace the bone list with the currently selected GameObjects."))) {
                         _selection = Selection.gameObjects.Where(g => g != null).Select(g => g.transform).Distinct().ToList();
                         RebuildAnalysis();
                     }
-                    if (GUILayout.Button(new GUIContent("Add selection",
+                    if (GUILayout.Button(new GUIContent("Add selected",
                             "Append the currently selected GameObjects to the bone list."))) {
                         foreach (var g in Selection.gameObjects) {
                             if (g == null) continue;
@@ -238,7 +240,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawPresetPicker() {
             EditorGUILayout.LabelField(
-                new GUIContent("Preset",
+                new GUIContent("2. Pick a preset",
                     "A preset writes parameter defaults tuned for a specific use case (ears, tail, hair, dress). Pick one to see its plan."),
                 AvatarQolStyles.SubsectionTitle);
 
@@ -362,7 +364,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawPlanPreview() {
             EditorGUILayout.LabelField(
-                new GUIContent("Plan",
+                new GUIContent("3. Review plan",
                     "What will be created if you click Apply. Nothing is written to the scene until then."),
                 AvatarQolStyles.SubsectionTitle);
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
@@ -538,12 +540,12 @@ namespace WhyKnot.AvatarQol.Tools {
                                 && _plan.PhysBones.Count > 0;
                 using (new EditorGUI.DisabledScope(!canApply)) {
                     string label = canApply
-                        ? $"Apply ({_plan.PhysBones.Count} PhysBone(s), {_plan.Colliders.Count} collider(s))"
-                        : "Apply";
+                        ? $"4. Apply plan ({_plan.PhysBones.Count} PhysBone(s), {_plan.Colliders.Count} collider(s))"
+                        : "4. Apply plan";
                     if (AvatarQolStyles.PrimaryButtonInline(
                             new GUIContent(label,
                                 "Create the listed components on the listed bones in one Undo group. Ctrl+Z reverts. VRC SDK 3 must be installed."),
-                            GUILayout.MinWidth(260))) {
+                            GUILayout.MinWidth(340))) {
                         ApplyPlan();
                     }
                 }

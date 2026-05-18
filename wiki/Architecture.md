@@ -9,15 +9,20 @@ Editor/
   AvatarQol.cs                         shared utilities (path formatting, etc.)
   HumanoidSideMap.cs                   Humanoid Left/Right/Center bone tagging
   Tools/
+    AutoMeshFixes/                     UI-first nondestructive mesh-fix components + processors
     WeightSanityCheckTool.cs           menu entry points
     WeightSanityCheckWindow.cs         the window + scan logic
+Runtime/
+  AutoMeshFixes/AutoTightenToBody.cs   editor-only stored setup component
 ```
 
 ## Tool registration
 
 Tools register entry points via Unity's standard `[MenuItem]` attributes. The framework doesn't impose a registration API -- it would be over-engineered for the current scope.
 
-Convention: every tool's top-level menu entry lives under `Tools/Avatar QoL/<Name>...`. If the tool has a sensible right-click trigger, it also registers `GameObject/Avatar QoL/<Action>...` (visible in the hierarchy right-click menu, fires once per multi-select).
+Convention: every tool's top-level menu entry lives under `Tools/WhyKnot/vrc-avatar-qol/<Name>...`. If the tool has a sensible right-click trigger, it also registers `GameObject/WhyKnot/vrc-avatar-qol/<Action>...` (visible in the hierarchy right-click menu, fires once per multi-select).
+
+Use components only when the user's intent would otherwise be lost by re-importing source assets from Blender, such as generated mesh/blendshape fixes. Tools that add durable Unity objects/components directly to the avatar, such as PhysBone Preset, can stay direct setup tools without storage components. Component-driven tools should keep the component inspector minimal: the component is durable storage, while the main user flow lives in an Avatar QoL window with clear labels, validation, and preview controls.
 
 ## HumanoidSideMap
 

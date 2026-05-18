@@ -2,6 +2,9 @@
     "name": "dev.whyknot.avatar-qol.Editor",
     "rootNamespace": "WhyKnot.AvatarQol",
     "references": [
+        "dev.whyknot.avatar-qol.Runtime",
+        "VRC.SDKBase.Editor.BuildPipeline",
+        "VRC.SDKBase.Editor",
         "VRC.SDK3.Dynamics.PhysBone",
         "VRC.Dynamics"
     ],

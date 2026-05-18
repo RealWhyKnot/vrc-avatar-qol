@@ -4,10 +4,10 @@
 // window itself lives in WeightSanityCheckWindow.cs.
 //
 // Two ways to open it:
-//   1. Tools/Avatar QoL/Weight Sanity Check...      (top-level menu)
+//   1. Tools/WhyKnot/vrc-avatar-qol/Weight Sanity Check...
 //   2. Right-click a GameObject with a Humanoid Animator in the hierarchy →
-//      "Avatar QoL/Check weights..." — pre-fills the window with that
-//      Animator.
+//      "WhyKnot/vrc-avatar-qol/Check weights..." — pre-fills the window
+//      with that Animator.
 
 using UnityEditor;
 using UnityEngine;
@@ -17,8 +17,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class WeightSanityCheckTool {
 
-        private const string ToolsMenuPath      = "Tools/Avatar QoL/Weight Sanity Check...";
-        private const string GameObjectMenuPath = "GameObject/Avatar QoL/Check weights...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/Weight Sanity Check...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Check weights...";
 
         static WeightSanityCheckTool() { /* registration happens via [MenuItem] below */ }
 

@@ -16,8 +16,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class MyTool {
 
-        private const string ToolsMenuPath      = "Tools/Avatar QoL/My Tool...";
-        private const string GameObjectMenuPath = "GameObject/Avatar QoL/Run my tool...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/My Tool...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Run my tool...";
 
         static MyTool() { /* registration via [MenuItem] below */ }
 
@@ -74,7 +74,7 @@ internal sealed class MyToolWindow : EditorWindow {
 
 ## Conventions
 
-- **Menu paths.** Top-level: `Tools/Avatar QoL/<Name>...`. Hierarchy right-click: `GameObject/Avatar QoL/<Action>...` with priority `49` (places the entry just above Unity's "Center On Children" group).
+- **Menu paths.** Top-level: `Tools/WhyKnot/vrc-avatar-qol/<Name>...`. Hierarchy right-click: `GameObject/WhyKnot/vrc-avatar-qol/<Action>...` with priority `49` (places the entry just above Unity's "Center On Children" group).
 - **Validators.** For hierarchy menu items, always pair with a `[MenuItem(..., true)]` validator that disables the entry when the selection isn't a fit. Saves users from clicking through to an error dialog.
 - **Read-only by default.** Tools that only inspect / report don't need Undo. Tools that mutate state must wrap operations in `Undo.SetCurrentGroupName` + `Undo.CollapseUndoOperations` so `Ctrl+Z` reverts the whole operation.
 - **No `[CustomEditor]` overrides.** Stay out of Unity's component drawers -- tools should open a window or print to console, not hijack the inspector. (vrcfury-qol uses an inspector overlay because it has to coexist with VRCFury's own drawer; this repo doesn't have that constraint.)
