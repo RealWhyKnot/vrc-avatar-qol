@@ -13,6 +13,11 @@ The most recent release is at the top.
 
 ### Changed
 - **deps:** Bump actions/checkout from 4 to 6 (#1) (0d8ab2b)
+- Mesh Fix pipeline: fix native-array leak, missing using, idempotent delayCall, preview leak; only clone write-target meshes (31d1746)
+- Editor asmdef: gate WHYKNOT_NDMF on nadena.dev.ndmf >=1.0.0; qualify Object disambiguation (5785f9d)
+- Surrounding tools: WeightFixer handshake; Clipping Keep/Merge/Overwrite (3221b6d)
+- Mesh Fix pipeline: redesign Auto Mesh Fixes around plan/apply with shape registry (e3b5885)
+- Add Auto Mesh Fixes, PhysBone Clipping Risks, Bone Merger; namespace tools under WhyKnot/vrc-avatar-qol (1471d75)
 
 ---
 
