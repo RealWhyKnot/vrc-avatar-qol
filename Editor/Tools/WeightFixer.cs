@@ -36,6 +36,7 @@ using System.IO;
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.MeshFixes.Pipeline;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -68,6 +69,21 @@ namespace WhyKnot.AvatarQol.Tools {
         internal static FixResult ApplyFixes(IList<IssueRef> issues, Animator animator) {
             var result = new FixResult();
             if (issues == null || issues.Count == 0 || animator == null) return result;
+
+            // If an Auto Mesh Fixes preview, play-mode run, or upload is
+            // currently swapping renderer.sharedMesh to an in-memory clone,
+            // writing durable weight fixes to that clone would silently
+            // disappear when the session restores. Refuse with a clear
+            // dialog and let the user stop the session first.
+            if (MeshFixSessionState.IsAnyMeshSessionActive()) {
+                EditorUtility.DisplayDialog(
+                    "Avatar QoL - Weight Fixer",
+                    "An Auto Mesh Fixes preview, play-mode run, or upload is currently swapping mesh data on these renderers. " +
+                    "Weight fixes written now would land on the temporary clone and be lost when the session ends.\n\n" +
+                    "Stop the preview / exit play mode / let the upload finish, then run Fix again.",
+                    "OK");
+                return result;
+            }
 
             // Group by renderer so we clone each mesh at most once.
             var byRenderer = new Dictionary<SkinnedMeshRenderer, List<IssueRef>>();

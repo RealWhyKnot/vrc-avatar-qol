@@ -10,7 +10,7 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 using WhyKnot.AvatarQol.Components;
-using WhyKnot.AvatarQol.Tools.AutoMeshFixes;
+using WhyKnot.AvatarQol.MeshFixes.UI;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -464,32 +464,65 @@ namespace WhyKnot.AvatarQol.Tools {
                 return;
             }
 
-            Undo.SetCurrentGroupName("Avatar QoL: create PhysBone clipping mesh fix");
-            int undoGroup = Undo.GetCurrentGroup();
-
-            int created = 0;
-            int updated = 0;
-            int skipped = list.Count - candidates.Count;
-            AutoTightenToBody lastSetup = null;
+            // Detect renderers that already have a setup so we can ask the
+            // user once what to do (Keep / Merge / Overwrite) instead of
+            // silently mutating their manually-tuned values.
+            var perRendererBest = new List<PhysBoneClippingAnalyzer.Issue>();
             foreach (var rendererGroup in candidates.GroupBy(i => i.Renderer)) {
                 var best = rendererGroup
                     .OrderByDescending(i => i.Severity)
                     .ThenByDescending(i => i.Score)
                     .FirstOrDefault();
                 if (best == null || best.Renderer == null || best.NearestSurfaceRenderer == null) continue;
+                perRendererBest.Add(best);
+            }
 
+            int existingCount = perRendererBest.Count(b => b.Renderer.GetComponent<AutoTightenToBody>() != null);
+            ExistingSetupAction existingAction = ExistingSetupAction.Merge;
+            if (existingCount > 0) {
+                int choice = EditorUtility.DisplayDialogComplex(
+                    "Avatar QoL - Existing Auto Mesh Fix",
+                    $"{existingCount} renderer(s) already have an Auto Tighten To Body setup. What should I do for those?\n\n" +
+                    "Merge (recommended): widen each numeric parameter to the larger of (current, suggested). Keeps your manual tuning unless the clipping analysis needs more room.\n\n" +
+                    "Overwrite: replace every numeric parameter with the suggested value. Your manual tuning is lost.\n\n" +
+                    "Keep: leave existing setups untouched; only fresh setups are created where there is none yet.",
+                    "Merge",     // 0
+                    "Keep",      // 1 (cancel)
+                    "Overwrite"  // 2 (alt)
+                );
+                switch (choice) {
+                    case 0: existingAction = ExistingSetupAction.Merge; break;
+                    case 1: existingAction = ExistingSetupAction.Keep; break;
+                    case 2: existingAction = ExistingSetupAction.Overwrite; break;
+                }
+            }
+
+            Undo.SetCurrentGroupName("Avatar QoL: create PhysBone clipping mesh fix");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            int created = 0;
+            int updated = 0;
+            int kept = 0;
+            int skipped = list.Count - candidates.Count;
+            AutoTightenToBody lastSetup = null;
+            foreach (var best in perRendererBest) {
                 var setup = best.Renderer.GetComponent<AutoTightenToBody>();
                 if (setup == null) {
                     setup = Undo.AddComponent<AutoTightenToBody>(best.Renderer.gameObject);
+                    ConfigureMeshFixSetup(setup, best, ExistingSetupAction.Overwrite);
+                    EditorUtility.SetDirty(setup);
                     created++;
+                    lastSetup = setup;
+                } else if (existingAction == ExistingSetupAction.Keep) {
+                    kept++;
+                    if (lastSetup == null) lastSetup = setup;
                 } else {
                     Undo.RecordObject(setup, "Update Avatar QoL clipping mesh fix");
+                    ConfigureMeshFixSetup(setup, best, existingAction);
+                    EditorUtility.SetDirty(setup);
                     updated++;
+                    lastSetup = setup;
                 }
-
-                ConfigureMeshFixSetup(setup, best);
-                EditorUtility.SetDirty(setup);
-                lastSetup = setup;
             }
 
             Undo.CollapseUndoOperations(undoGroup);
@@ -497,9 +530,9 @@ namespace WhyKnot.AvatarQol.Tools {
             if (lastSetup != null) {
                 Selection.activeObject = lastSetup.gameObject;
                 EditorGUIUtility.PingObject(lastSetup.gameObject);
-                AutoMeshFixWindow.Open(lastSetup);
+                MeshFixWindow.Open(lastSetup);
                 _scanSummary =
-                    $"Stored {created + updated} Auto Mesh Fix setup(s) on moving mesh object(s). " +
+                    $"Stored mesh fix setup(s): {created} created, {updated} updated, {kept} kept. " +
                     $"Selected {AvatarQol.GetGameObjectPath(lastSetup.gameObject)}.";
                 if (skipped > 0) _scanSummary += $" Skipped {skipped} self-clipping row(s).";
             } else {
@@ -509,24 +542,46 @@ namespace WhyKnot.AvatarQol.Tools {
             Repaint();
         }
 
+        private enum ExistingSetupAction { Keep, Merge, Overwrite }
+
         private static void ConfigureMeshFixSetup(
             AutoTightenToBody setup,
-            PhysBoneClippingAnalyzer.Issue issue) {
-            setup.garmentRenderer = issue.Renderer;
-            setup.bodyRenderer = issue.NearestSurfaceRenderer;
-            setup.garmentTightenBlendShapeName = $"AUTO_Tighten_{issue.Renderer.name}";
-            setup.bodyHideBlendShapeName = $"AUTO_HideBody_{issue.Renderer.name}";
-            setup.createGarmentTightenShape = true;
-            setup.setGarmentTightenWeightTo100 = true;
+            PhysBoneClippingAnalyzer.Issue issue,
+            ExistingSetupAction mode) {
+            // On Overwrite the renderer refs / names / toggles are always
+            // rewritten. On Merge they are only set if currently null/empty
+            // so the user's manual choices survive.
+            bool overwrite = mode == ExistingSetupAction.Overwrite;
 
-            bool bodyLikeTarget = LooksLikeBodyRenderer(issue.NearestSurfaceRenderer);
-            setup.createBodyHideShape = bodyLikeTarget;
-            setup.setBodyHideWeightTo100 = bodyLikeTarget;
+            if (overwrite || setup.garmentRenderer == null) setup.garmentRenderer = issue.Renderer;
+            if (overwrite || setup.bodyRenderer == null) setup.bodyRenderer = issue.NearestSurfaceRenderer;
+            if (overwrite || string.IsNullOrWhiteSpace(setup.garmentTightenBlendShapeName)) {
+                setup.garmentTightenBlendShapeName = $"AUTO_Tighten_{issue.Renderer.name}";
+            }
+            if (overwrite || string.IsNullOrWhiteSpace(setup.bodyHideBlendShapeName)) {
+                setup.bodyHideBlendShapeName = $"AUTO_HideBody_{issue.Renderer.name}";
+            }
+            if (overwrite) {
+                setup.createGarmentTightenShape = true;
+                setup.setGarmentTightenWeightTo100 = true;
+                bool bodyLikeTarget = LooksLikeBodyRenderer(issue.NearestSurfaceRenderer);
+                setup.createBodyHideShape = bodyLikeTarget;
+                setup.setBodyHideWeightTo100 = bodyLikeTarget;
+            }
 
             float projectedRange = issue.EstimatedMotion + issue.Clearance + 0.015f;
-            setup.maxProjectionDistance = Mathf.Clamp(Mathf.Max(setup.maxProjectionDistance, projectedRange), 0.01f, 0.2f);
-            setup.bodyHideRadius = Mathf.Clamp(Mathf.Max(setup.bodyHideRadius, issue.Clearance + 0.01f), 0.005f, 0.12f);
-            setup.bodyHideDepth = Mathf.Clamp(Mathf.Max(setup.bodyHideDepth, issue.EstimatedMotion + 0.02f), 0.01f, 0.2f);
+            if (overwrite) {
+                setup.maxProjectionDistance = Mathf.Clamp(projectedRange, 0.01f, 0.2f);
+                setup.bodyHideRadius = Mathf.Clamp(issue.Clearance + 0.01f, 0.005f, 0.12f);
+                setup.bodyHideDepth = Mathf.Clamp(issue.EstimatedMotion + 0.02f, 0.01f, 0.2f);
+            } else {
+                // Merge: widen to cover what the analysis says is needed, but
+                // never shrink the user's existing dial. This was the previous
+                // behavior; preserved here so default-button-press matches it.
+                setup.maxProjectionDistance = Mathf.Clamp(Mathf.Max(setup.maxProjectionDistance, projectedRange), 0.01f, 0.2f);
+                setup.bodyHideRadius = Mathf.Clamp(Mathf.Max(setup.bodyHideRadius, issue.Clearance + 0.01f), 0.005f, 0.12f);
+                setup.bodyHideDepth = Mathf.Clamp(Mathf.Max(setup.bodyHideDepth, issue.EstimatedMotion + 0.02f), 0.01f, 0.2f);
+            }
         }
 
         private static bool LooksLikeBodyRenderer(SkinnedMeshRenderer renderer) {
