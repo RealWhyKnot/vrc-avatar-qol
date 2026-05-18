@@ -49,6 +49,18 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing tag=$tag (version=$version)"
 
+      - name: Detect beta tag
+        id: beta
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if [[ "$tag" == *-beta* ]]; then
+            echo "is_beta=true"  >> "$GITHUB_OUTPUT"
+            echo "release_flags=--prerelease --latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+            echo "release_flags=" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
         with:
           ref: ${{ steps.tag.outputs.tag }}
@@ -151,9 +163,11 @@ jobs:
             "$zip" "package.json" \
             --title "$tag" \
             --notes "$notes" \
-            --verify-tag
+            --verify-tag \
+            ${{ steps.beta.outputs.release_flags }}
 
       - name: Trigger VPM listing rebuild
+        if: ${{ steps.beta.outputs.is_beta != 'true' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.LISTING_DISPATCH_TOKEN || github.token }}
