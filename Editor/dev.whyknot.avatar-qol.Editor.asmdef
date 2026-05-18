@@ -22,6 +22,11 @@
             "name": "com.vrchat.avatars",
             "expression": "3.0.0",
             "define": "VRC_SDK_VRCSDK3"
+        },
+        {
+            "name": "nadena.dev.ndmf",
+            "expression": "1.0.0",
+            "define": "WHYKNOT_NDMF"
         }
     ],
     "noEngineReferences": false

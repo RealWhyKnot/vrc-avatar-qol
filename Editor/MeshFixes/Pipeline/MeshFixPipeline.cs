@@ -28,7 +28,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.Pipeline {
             /// Used by upload/playmode entry points which respect the
             /// per-component processOnUpload/processInPlayMode flags.
             /// </summary>
-            public System.Predicate<Object> OwnerGate;
+            public System.Predicate<UnityEngine.Object> OwnerGate;
         }
 
         internal sealed class RunResult {
