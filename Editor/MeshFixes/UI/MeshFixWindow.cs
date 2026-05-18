@@ -18,6 +18,9 @@ using UnityEngine;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.MeshFixes.Lifecycle;
 using WhyKnot.AvatarQol.MeshFixes.Pipeline;
+// Brings AvatarQol.GetGameObjectPath() in scope; C# does not implicitly
+// import a child namespace's parent.
+using WhyKnot.AvatarQol;
 
 namespace WhyKnot.AvatarQol.MeshFixes.UI {
 

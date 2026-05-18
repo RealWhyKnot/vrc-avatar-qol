@@ -76,8 +76,15 @@ namespace WhyKnot.AvatarQol.MeshFixes.Operations {
         public void Apply(IMeshFixContext ctx) {
             var garmentRenderer = _setup.garmentRenderer;
             var bodyRenderer = _setup.bodyRenderer;
+            // Garment is the write target; clone + capture it via the context.
             var garmentMesh = ctx.GetOrCloneEditableMesh(garmentRenderer);
-            var bodyMesh = ctx.GetOrCloneEditableMesh(bodyRenderer);
+            // Body is read-only here. Use whatever sharedMesh the renderer
+            // currently has -- if a prior op (BodyHideOp from another setup,
+            // WeightFixer's persistent clone) replaced it, the latest mesh is
+            // the right read target. We must NOT clone + swap a read-only
+            // renderer; that would surprise users with a transient sharedMesh
+            // swap and inflate the cloned-mesh count.
+            var bodyMesh = bodyRenderer != null ? bodyRenderer.sharedMesh : null;
             if (garmentMesh == null || bodyMesh == null) return;
 
             var bodySkin = new SkinningCache(bodyRenderer, bodyMesh);

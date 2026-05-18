@@ -36,6 +36,10 @@ namespace WhyKnot.AvatarQol.MeshFixes.Lifecycle {
         private static bool _initTransformsProbed;
 
         static PhysBoneReinitHook() {
+            // Unsubscribe-then-subscribe so repeated static-ctor runs (every
+            // assembly reload, every Domain-Reload-disabled play-mode entry)
+            // do not stack handlers.
+            EditorApplication.delayCall -= FlushPlayModeReinits;
             EditorApplication.delayCall += FlushPlayModeReinits;
         }
 

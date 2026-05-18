@@ -196,6 +196,10 @@ namespace WhyKnot.AvatarQol.MeshFixes.Lifecycle {
             if (_sourceAvatar != null) {
                 RestoreSourceVisibility(_sourceAvatar, _sourceWasHidden);
                 _sourceAvatar = null;
+                // Mesh clones live behind HideFlags.DontSave -- dropping the
+                // session reference without Dispose would leak them until
+                // domain reload.
+                _previewSession?.Dispose();
                 _previewSession = null;
                 ForgetPreview();
                 MeshFixSessionState.SetPreviewActive(false);

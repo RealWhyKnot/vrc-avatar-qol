@@ -44,10 +44,16 @@ namespace WhyKnot.AvatarQol.MeshFixes.Pipeline {
                 ? mesh.normals
                 : Enumerable.Repeat(Vector3.up, mesh != null ? mesh.vertexCount : 0).ToArray();
 
+            // GetAllBoneWeights / GetBonesPerVertex return NativeArrays whose
+            // lifetime the caller owns; copy into managed arrays then dispose
+            // immediately. Without Dispose, native memory leaks until GC or
+            // domain reload.
             var allWeights = mesh != null ? mesh.GetAllBoneWeights() : default(NativeArray<BoneWeight1>);
             var bpv = mesh != null ? mesh.GetBonesPerVertex() : default(NativeArray<byte>);
             _weights = allWeights.IsCreated ? allWeights.ToArray() : Array.Empty<BoneWeight1>();
+            if (allWeights.IsCreated) allWeights.Dispose();
             _bonesPerVertex = bpv.IsCreated ? bpv.ToArray() : Array.Empty<byte>();
+            if (bpv.IsCreated) bpv.Dispose();
             _weightStart = new int[_bonesPerVertex.Length];
             _primaryBone = new int[_bonesPerVertex.Length];
 

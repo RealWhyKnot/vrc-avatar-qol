@@ -76,8 +76,11 @@ namespace WhyKnot.AvatarQol.MeshFixes.Operations {
         public void Apply(IMeshFixContext ctx) {
             var garmentRenderer = _setup.garmentRenderer;
             var bodyRenderer = _setup.bodyRenderer;
-            var garmentMesh = ctx.GetOrCloneEditableMesh(garmentRenderer);
+            // Body is the write target; clone + capture it via the context.
             var bodyMesh = ctx.GetOrCloneEditableMesh(bodyRenderer);
+            // Garment is read-only here -- same rule as in GarmentTightenOp:
+            // do not clone + swap a read-only renderer's sharedMesh.
+            var garmentMesh = garmentRenderer != null ? garmentRenderer.sharedMesh : null;
             if (garmentMesh == null || bodyMesh == null) return;
 
             var garmentSkin = new SkinningCache(garmentRenderer, garmentMesh);
