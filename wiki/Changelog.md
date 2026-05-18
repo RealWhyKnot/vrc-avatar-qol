@@ -18,6 +18,7 @@ The most recent release is at the top.
 - Surrounding tools: WeightFixer handshake; Clipping Keep/Merge/Overwrite (3221b6d)
 - Mesh Fix pipeline: redesign Auto Mesh Fixes around plan/apply with shape registry (e3b5885)
 - Add Auto Mesh Fixes, PhysBone Clipping Risks, Bone Merger; namespace tools under WhyKnot/vrc-avatar-qol (1471d75)
+- Editor asmdef: drop the speculative WHYKNOT_NDMF versionDefine (5a7f5e1)
 
 ---
 
