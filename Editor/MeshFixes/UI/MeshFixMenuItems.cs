@@ -1,25 +1,32 @@
+// MeshFixMenuItems.cs
+//
+// Menu-bar and right-click entry points for the mesh fix pipeline.
+// Kept in a dedicated file so the menu paths are easy to find and the
+// window class stays focused on UI.
+//
+// Menu strings are stable across the rewrite -- they were already
+// "Tools/WhyKnot/vrc-avatar-qol/Auto Mesh Fixes/..." before this
+// pipeline landed, so muscle memory and external docs keep working.
+
 using UnityEditor;
 using UnityEngine;
 
-namespace WhyKnot.AvatarQol.Tools.AutoMeshFixes {
+namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
-    [InitializeOnLoad]
-    internal static class AutoMeshFixTool {
+    internal static class MeshFixMenuItems {
 
         private const string ToolsMenuPath = "Tools/WhyKnot/vrc-avatar-qol/Auto Mesh Fixes/Open...";
         private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Auto Mesh Fixes...";
 
-        static AutoMeshFixTool() { }
-
         [MenuItem(ToolsMenuPath, false, 2100)]
-        private static void OpenFromToolsMenu() {
-            AutoMeshFixWindow.Open();
-        }
+        private static void OpenFromToolsMenu() => MeshFixWindow.Open();
 
         [MenuItem(GameObjectMenuPath, false, 51)]
         private static void OpenFromHierarchy(MenuCommand command) {
+            // Hierarchy menu callbacks fire once per selected GameObject;
+            // bail for all but the first so we do not open N windows.
             if (command.context != Selection.activeGameObject) return;
-            AutoMeshFixWindow.Open();
+            MeshFixWindow.Open();
         }
 
         [MenuItem(GameObjectMenuPath, true)]
